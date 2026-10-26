@@ -72,6 +72,10 @@ MCP: `https://mcp.SEUDOMINIO.com.br/mcp`
 
 **Limitação comercial do ChatGPT:** a documentação da OpenAI de outubro de 2026 indica que contas Free não têm garantida a criação de MCP personalizado. A presença da opção precisa ser verificada **em cada conta**. O site/jogo funciona por conta própria mesmo sem ChatGPT; a integração externa é condicional.
 
+## Plano de contingência para ChatGPT Free
+
+O jogo inclui um botão **“Copiar resumo para ChatGPT”**. O participante decide copiar seus dados fictícios de jogo para uma conversa normal na conta gratuita, **sem conexão MCP**. A IA pode orientar a partir desse resumo, mas não acessa o servidor automaticamente nem verifica mudanças em tempo real. Esta alternativa funciona mesmo quando o plano não permite plugins personalizados.
+
 ## Segurança e privacidade
 
 - Não peça nomes completos, e-mails, documentos nem informações financeiras reais. Use só apelidos e decisões simuladas.
