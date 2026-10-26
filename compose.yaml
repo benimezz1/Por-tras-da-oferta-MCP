@@ -2,8 +2,9 @@ services:
   game-mcp:
     build: .
     restart: unless-stopped
-    env_file: .env
     environment:
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?Configure PUBLIC_BASE_URL em .env}
+      REGISTRATION_CODE: ${REGISTRATION_CODE:?Configure REGISTRATION_CODE em .env}
       DATA_FILE: /data/runtime.json
       HOST: 0.0.0.0
       PORT: "3100"
