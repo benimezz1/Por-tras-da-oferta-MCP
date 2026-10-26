@@ -1,0 +1,27 @@
+services:
+  game-mcp:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_FILE: /data/runtime.json
+      HOST: 0.0.0.0
+      PORT: "3100"
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - participant_data:/data
+    networks:
+      - pto_internal
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:?Defina TUNNEL_TOKEN no arquivo .env}
+    depends_on:
+      - game-mcp
+    networks:
+      - pto_internal
+networks:
+  pto_internal:
+volumes:
+  participant_data:
