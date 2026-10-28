@@ -19,6 +19,7 @@ test('MCP sem OAuth: senha somente no site, codigo por chat, isolamento por joga
   let started = false;
   for (let i=0;i<55;i++) { try { if ((await fetch(base+'/health')).ok) { started=true;break; } } catch {} await delay(90); }
   assert.ok(started,'Servidor iniciou');
+  assert.equal((await fetch(base+'/health')).headers.get('referrer-policy'), 'no-referrer', 'Demais rotas continuam protegidas');
 
   const post = (path, data, headers={}) => fetch(base+path,{ method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify(data) });
   const rpc = async (method,params={}) => {
@@ -58,6 +59,7 @@ test('MCP sem OAuth: senha somente no site, codigo por chat, isolamento por joga
     assert.match(link_seguro,/\/vincular\?pedido=/);
     const page = await fetch(link_seguro);
     assert.equal(page.status,200);
+    assert.equal(page.headers.get('referrer-policy'), 'same-origin', 'Permite Origin real no POST HTML do navegador');
     assert.doesNotMatch(await page.text(), /senha-super-forte-de-teste/);
     const form = async(password) => fetch(base+'/vincular/entrar',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({pedido,username,password})});
     const wrong=await form('senha-errada');
