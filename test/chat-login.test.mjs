@@ -40,9 +40,14 @@ test('MCP sem OAuth: senha somente no site, codigo por chat, isolamento por joga
 
   const init = await rpc('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'test',version:'1'}});
   assert.equal(init.result.protocolVersion,'2025-11-25');
+  assert.match(init.result.instructions,/REGRA DE ATENDIMENTO/);
+  assert.match(init.result.instructions,/tenho uma duvida/);
+  assert.match(init.result.instructions,/Qual e seu apelido/);
+  assert.match(init.result.instructions,/NUNCA no ChatGPT/);
   const listed = await rpc('tools/list');
   assert.deepEqual(listed.result.tools.find(t=>t.name==='iniciar_vinculo').securitySchemes,[{type:'noauth'}]);
   assert.ok(listed.result.tools.some(t=>t.name==='confirmar_vinculo'));
+  assert.match(listed.result.tools.find(t=>t.name==='iniciar_vinculo').description, /nao espere pedido explicito/i);
   assert.deepEqual(listed.result.tools.find(t=>t.name==='consultar_progresso').securitySchemes,[{type:'noauth'}]);
 
   const before = await call('consultar_progresso');
