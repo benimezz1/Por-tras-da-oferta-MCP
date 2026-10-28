@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
 const file = resolve(process.env.DATA_FILE || './data/runtime.json');
-const empty = () => ({ version: 1, users: [], sessions: [], clients: [], pending: [], codes: [], tokens: [], choices: [] });
+const empty = () => ({ version: 1, users: [], sessions: [], clients: [], pending: [], codes: [], tokens: [], chatLinks: [], chatSessions: [], choices: [] });
 let state;
 let loading;
 let queue = Promise.resolve();
@@ -30,8 +30,8 @@ export async function update(fn) {
     const old = await load();
     const draft = structuredClone(old);
     const now = Date.now();
-    for (const key of ['sessions', 'pending', 'codes', 'tokens']) {
-      draft[key] = draft[key].filter(item => item.expires > now);
+    for (const key of ['sessions', 'pending', 'codes', 'tokens', 'chatLinks', 'chatSessions']) {
+      draft[key] = (draft[key] || []).filter(item => item.expires > now);
     }
     const result = await fn(draft);
     const tmp = file + '.' + randomBytes(6).toString('hex') + '.tmp';
