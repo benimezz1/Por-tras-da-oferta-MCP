@@ -6,6 +6,7 @@ import { SCENARIOS, summarize, recordChoice } from './scenarios.mjs';
 import { CHAVES_ESTRATEGIAS } from './conhecimento.mjs';
 import { analisarTextoAnuncio } from './anuncios.mjs';
 import { handleMcp } from './mcp.mjs';
+import { CHAT_LOGIN_ENABLED, linkPageInfo, linkPage, linkCodePage, verifyChatLink } from './chat-auth.mjs';
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3100);
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw Error('Porta inválida');
@@ -40,6 +41,23 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && path.pathname === '/health') return send(res, 200, { status: 'ok', projeto: 'por-tras-da-oferta', mcp: '/mcp' });
     if (req.method === 'GET' && ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'].includes(path.pathname)) return send(res, 200, metadata('resource'));
     if (req.method === 'GET' && path.pathname === '/.well-known/oauth-authorization-server') return send(res, 200, metadata('oauth'));
+    if (CHAT_LOGIN_ENABLED && req.method === 'GET' && path.pathname === '/vincular') {
+      const id = path.searchParams.get('pedido') || '';
+      const pair = await linkPageInfo(id);
+      if (!pair) return page(res, 404, '<!doctype html><html lang="pt-BR"><meta charset="utf-8"><h1>Vinculacao expirada ou invalida</h1><p>Solicite um novo link na conversa.</p></html>');
+      return page(res, 200, linkPage(id, pair.username));
+    }
+    if (CHAT_LOGIN_ENABLED && req.method === 'POST' && path.pathname === '/vincular/entrar') {
+      throttle(req, 'chat-link-password', 12);
+      if (!(req.headers['content-type'] || '').startsWith('application/x-www-form-urlencoded')) return send(res, 415, { erro: 'Formulario invalido.' });
+      const p = new URLSearchParams(await bodyText(req));
+      const id = p.get('pedido') || '';
+      const username = p.get('username') || '';
+      const password = p.get('password') || '';
+      const result = await verifyChatLink(id, username, password);
+      if (!result.ok) return page(res, 401, linkPage(id, username, 'Dados incorretos ou vinculo expirado. Tente novamente ou solicite outro link.'));
+      return page(res, 200, linkCodePage(result.code));
+    }
     if (req.method === 'POST' && path.pathname === '/api/register') { throttle(req, 'register', 8); const p = await jsonBody(req); const user = await register(p); const token = await login(p); return send(res, 201, { usuario: user }, { 'Set-Cookie': cookie(token) }); }
     if (req.method === 'POST' && path.pathname === '/api/login') { throttle(req, 'login', 20); const token = await login(await jsonBody(req)); return send(res, 200, { sucesso: true }, { 'Set-Cookie': cookie(token) }); }
     if (req.method === 'POST' && path.pathname === '/api/logout') { await logout(req); return send(res, 200, { sucesso: true }, { 'Set-Cookie': clearCookie }); }
@@ -61,7 +79,11 @@ const server = createServer(async (req, res) => {
       if (req.method === 'GET' || req.method === 'DELETE') { res.writeHead(405, { Allow: 'POST', 'Cache-Control': 'no-store' }); return res.end(); }
       if (req.method !== 'POST') return send(res, 405, { erro: 'Método não permitido.' });
       if (!(req.headers['accept'] || '').includes('application/json') && !(req.headers['accept'] || '').includes('*/*')) return send(res, 406, { erro: 'Accept deve incluir application/json e text/event-stream.' });
-      const result = await handleMcp(req, await jsonBody(req));
+      const rpc = await jsonBody(req);
+      if (CHAT_LOGIN_ENABLED && rpc.method === 'tools/call' && ['iniciar_vinculo','confirmar_vinculo'].includes(rpc.params?.name)) {
+        throttle(req, 'chat-link-mcp', 18);
+      }
+      const result = await handleMcp(req, rpc);
       if (result.httpStatus === 202) { res.writeHead(202, { 'Cache-Control': 'no-store' }); return res.end(); }
       return send(res, result.httpStatus, result.payload, result.challenge ? { 'WWW-Authenticate': result.challenge } : {});
     }
