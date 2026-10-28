@@ -1,0 +1,85 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash, randomBytes } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+
+const root = new URL('../', import.meta.url);
+const body = o => JSON.stringify(o);
+test('cadastro, isolamento entre jogadores, OAuth e ferramentas MCP', { timeout: 22000 }, async t => {
+  const port = 33500 + Math.floor(Math.random() * 2000);
+  const base = `http://127.0.0.1:${port}`;
+  const dir = await mkdtemp(join(tmpdir(), 'pto-test-'));
+  const child = spawn(process.execPath, ['src/server.mjs'], { cwd: root, env: { ...process.env, PUBLIC_BASE_URL: base, HOST: '127.0.0.1', PORT: String(port), DATA_FILE: join(dir,'db.json'), REGISTRATION_CODE: 'code-para-teste' }, stdio: 'ignore' });
+  t.after(async () => { child.kill(); await rm(dir, { recursive: true, force: true }); });
+  let up = false;
+  for (let i=0; i<55; i++) { try { const r = await fetch(base+'/health'); if (r.ok) { up=true; break; } } catch {} await delay(90); }
+  assert.ok(up, 'API inicia');
+  const request = async (path, obj, cookie, headers = {}) => fetch(base+path, { method: obj === undefined ? 'GET' : 'POST',
+    headers: { ...(obj === undefined ? {} : { 'Content-Type': 'application/json' }), ...(cookie ? { cookie } : {}), ...headers }, body: obj === undefined ? undefined : body(obj), redirect: 'manual' });
+  async function signUp(username) {
+    const r = await request('/api/register', { username, password: 'senha-longa-para-demo', invite: 'code-para-teste' });
+    assert.equal(r.status, 201, await r.clone().text());
+    return r.headers.get('set-cookie').split(';')[0];
+  }
+  const a = await signUp('alunoA');
+  const b = await signUp('alunoB');
+  const choice = await request('/api/game/choice', { scenarioId: 'fone', buy: true, guess: 'urgencia' }, a);
+  assert.equal(choice.status, 200, await choice.text());
+  const dataA = await (await request('/api/game', undefined, a)).json();
+  const dataB = await (await request('/api/game', undefined, b)).json();
+  assert.equal(dataA.resumo.fases_concluidas, 1);
+  assert.equal(dataB.resumo.fases_concluidas, 0);
+  assert.equal(dataA.resumo.saldo_ficticio, 320);
+  assert.notEqual(dataA.resumo.participante.id, dataB.resumo.participante.id);
+  const noAuth = await request('/api/me'); assert.equal(noAuth.status, 401);
+  const badClient = await request('/oauth/register', { redirect_uris: ['https://malicious.invalid/callback'] });
+  assert.equal(badClient.status, 400);
+  const reg = await request('/oauth/register', { client_name: 'ChatGPT teste', redirect_uris: ['http://127.0.0.1:9999/callback'], token_endpoint_auth_method: 'none' });
+  assert.equal(reg.status, 201);
+  const client = await reg.json();
+  const verifier = randomBytes(48).toString('base64url');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const params = new URLSearchParams({ response_type:'code', client_id:client.client_id, redirect_uri:'http://127.0.0.1:9999/callback', scope:'profile.read game.read offer.analyze', state:'estado-teste', code_challenge:challenge, code_challenge_method:'S256', resource:base+'/mcp' });
+  const author = await fetch(base+'/oauth/authorize?'+params, { headers: { cookie: a } });
+  assert.equal(author.status, 200);
+  const html = await author.text();
+  const pid = html.match(/name="pendingId" value="([^"]+)"/)?.[1];
+  const csrf = html.match(/name="csrf" value="([^"]+)"/)?.[1];
+  assert.ok(pid && csrf);
+  const stolen = await fetch(base+'/oauth/consent', { method:'POST', headers: { cookie: b, 'Content-Type':'application/x-www-form-urlencoded' }, body:new URLSearchParams({ pendingId:pid, csrf, approve:'yes' }), redirect:'manual' });
+  assert.equal(stolen.status, 400);
+  const approved = await fetch(base+'/oauth/consent', { method:'POST', headers: { cookie: a, 'Content-Type':'application/x-www-form-urlencoded' }, body:new URLSearchParams({ pendingId:pid, csrf, approve:'yes' }), redirect:'manual' });
+  assert.equal(approved.status, 302);
+  const cb = new URL(approved.headers.get('location'));
+  assert.equal(cb.searchParams.get('state'),'estado-teste');
+  assert.equal(cb.searchParams.get('iss'),base);
+  const code = cb.searchParams.get('code');
+  const payload = new URLSearchParams({ grant_type:'authorization_code', code, client_id:client.client_id, redirect_uri:'http://127.0.0.1:9999/callback', code_verifier:verifier, resource:base+'/mcp' });
+  const tokenResp = await fetch(base+'/oauth/token', { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' }, body:payload });
+  assert.equal(tokenResp.status,200,await tokenResp.clone().text());
+  const token = (await tokenResp.json()).access_token;
+  const replay = await fetch(base+'/oauth/token',{method:'POST',body:payload});
+  assert.equal(replay.status,400);
+  const noToken = await request('/mcp',{ jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25'} },undefined,{accept:'application/json, text/event-stream'});
+  assert.equal(noToken.status,401); assert.match(noToken.headers.get('www-authenticate'),/resource_metadata/);
+  const rpc = async (obj, version) => {
+    const r = await request('/mcp',obj,undefined,{ Authorization:'Bearer '+token,Accept:'application/json, text/event-stream', ...(version ? {'MCP-Protocol-Version':version}: {}) });
+    assert.equal(r.status,200,await r.clone().text());
+    return r.json();
+  };
+  const init = await rpc({ jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'test',version:'1.0'}} });
+  assert.equal(init.result.protocolVersion,'2025-11-25');
+  const listed = await rpc({jsonrpc:'2.0',id:2,method:'tools/list',params:{}},'2025-11-25');
+  assert.ok(listed.result.tools.some(x=>x.name==='consultar_progresso'));
+  const pro = await rpc({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'consultar_progresso',arguments:{}}},'2025-11-25');
+  assert.equal(pro.result.structuredContent.fases_concluidas,1);
+  assert.equal(pro.result.structuredContent.participante.apelido,'alunoA');
+  const modern = await rpc({jsonrpc:'2.0',id:4,method:'server/discover',params:{_meta:{'io.modelcontextprotocol/protocolVersion':'2026-07-28','io.modelcontextprotocol/clientCapabilities':{}}}},'2026-07-28');
+  assert.equal(modern.result.supportedVersions[0],'2026-07-28');
+  const profile = await rpc({jsonrpc:'2.0',id:5,method:'tools/call',params:{name:'get_profile',arguments:{}}},'2025-11-25');
+  assert.equal(profile.result.structuredContent.id,dataA.resumo.participante.id);
+});
