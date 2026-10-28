@@ -76,6 +76,42 @@ MCP: `https://mcp.SEUDOMINIO.com.br/mcp`
 
 O jogo inclui um botão **“Copiar resumo para ChatGPT”**. O participante decide copiar seus dados fictícios de jogo para uma conversa normal na conta gratuita, **sem conexão MCP**. A IA pode orientar a partir desse resumo, mas não acessa o servidor automaticamente nem verifica mudanças em tempo real. Esta alternativa funciona mesmo quando o plano não permite plugins personalizados.
 
+## Vinculação por conversa sem OAuth (experimental, somente para demonstração)
+
+O backend preserva **OAuth como padrão**. Uma alternativa de demonstração pode ser habilitada
+com `CHAT_LOGIN_ENABLED=true` no ambiente do serviço (reinicie **somente** o MCP).
+
+Nesse modo, o cliente MCP pode ser configurado como **No authentication**;
+`initialize` e `tools/list` são anônimos. Isso **não** torna os dados dos jogadores públicos.
+Para consultar perfil, progresso ou usar qualquer ferramenta protegida, o assistente deve:
+
+1. Perguntar o **apelido**, sem revelar se aquela conta existe.
+2. Chamar `iniciar_vinculo({usuario})`, que retorna um link HTTPS temporário.
+3. Enviar o link; o participante digita sua **senha somente no nosso site**, nunca no ChatGPT.
+4. O site exibe um **código temporário de uso único**, que o participante informa no chat.
+5. Chamar `confirmar_vinculo({pedido,codigo})`, que libera um token de sessão de curta duração.
+6. Passar esse token no argumento `sessao` de cada ferramenta protegida. O servidor valida
+   o token e acessa exclusivamente o usuário vinculado a ele.
+
+O pedido expira em 10 minutos e a sessão em 60 minutos. Sem `sessao` válida, nenhuma
+ferramenta protegida entrega informações de usuário. Cada nova conversa deve criar nova
+vinculação. O ChatGPT **não** garante um ID de conversa autenticado para o servidor; o
+isolamento é feito pelo token e o modelo precisa repassá-lo às ferramentas. O modelo
+pode responder perguntas gerais sem usar o MCP, e o servidor não controla essas respostas.
+
+**Limites:** esse token de sessão aparece em argumentos/resultados de ferramentas no
+contexto do modelo, logo essa opção é **menos segura do que OAuth**. Use somente
+apelidos e dados fictícios, sem dados pessoais de menores, e restrinja testes à
+bancada. **Nunca peça senha no chat**. Códigos temporários também são segredos
+até expirar. Não indicado para serviço público sensível sem auditoria.
+
+### Depois do Ciclo 4
+
+Para permitir login uma única vez em várias conversas, é necessário usar a
+identidade autenticada do cliente (por exemplo, OAuth do ChatGPT com renovação e
+revogação adequadas). Isso não se obtém apenas alternando uma flag do servidor.
+Desabilitar OAuth **não** habilita plugins em contas sem acesso a esse recurso.
+
 ## Segurança e privacidade
 
 - Não peça nomes completos, e-mails, documentos nem informações financeiras reais. Use só apelidos e decisões simuladas.
