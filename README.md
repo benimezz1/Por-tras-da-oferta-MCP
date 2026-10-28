@@ -93,6 +93,18 @@ Para consultar perfil, progresso ou usar qualquer ferramenta protegida, o assist
 6. Passar esse token no argumento `sessao` de cada ferramenta protegida. O servidor valida
    o token e acessa exclusivamente o usuário vinculado a ele.
 
+No atendimento via plugin, a orientação enviada pelo MCP no handshake (`initialize.instructions`)
+agora recomenda **pedir o apelido logo no primeiro contato**, mesmo quando a pessoa diz
+apenas "oi" ou "tenho uma dúvida". A descrição de `iniciar_vinculo` também
+prioriza esse fluxo. Após atualizar o servidor, **atualize/recarregue os metadados
+do plugin no ChatGPT** e teste numa conversa nova.
+
+**Limite estrutural:** as instruções do MCP são recomendações para o modelo,
+não uma política com execução obrigatória. O ChatGPT ainda pode responder
+com conhecimento próprio sem chamar qualquer ferramenta. Só um cliente/app
+que controle o fluxo de entrada consegue exigir login antes de toda resposta.
+O servidor já **bloqueia de verdade** consultas de conta sem sessão válida.
+
 O pedido expira em 10 minutos e a sessão em 60 minutos. Sem `sessao` válida, nenhuma
 ferramenta protegida entrega informações de usuário. Cada nova conversa deve criar nova
 vinculação. O ChatGPT **não** garante um ID de conversa autenticado para o servidor; o

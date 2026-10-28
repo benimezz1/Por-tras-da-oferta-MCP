@@ -45,6 +45,11 @@ const server = createServer(async (req, res) => {
       const id = path.searchParams.get('pedido') || '';
       const pair = await linkPageInfo(id);
       if (!pair) return page(res, 404, '<!doctype html><html lang="pt-BR"><meta charset="utf-8"><h1>Vinculacao expirada ou invalida</h1><p>Solicite um novo link na conversa.</p></html>');
+      // Same-origin HTML form POSTs may otherwise send Origin: null under
+      // Referrer-Policy: no-referrer (Fetch specification). Preserve no-referrer
+      // globally, but use same-origin only on this short-lived login page.
+      // No referrer is sent to other origins, including the pairing secret.
+      res.setHeader('Referrer-Policy', 'same-origin');
       return page(res, 200, linkPage(id, pair.username));
     }
     if (CHAT_LOGIN_ENABLED && req.method === 'POST' && path.pathname === '/vincular/entrar') {

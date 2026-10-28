@@ -25,9 +25,22 @@ const TOOLS = [
 // Discovery remains anonymous in chat mode; protected player tools still require
 // a short-lived credential issued only after password proof on the website.
 const noauth = [{ type: 'noauth' }];
+// Strong workflow guidance helps ChatGPT choose pairing as the first step.
+// Only the backend authorization check is enforceable: a model can still
+// answer generic questions without calling any MCP tool.
+const CHAT_LOGIN_INSTRUCTIONS = [
+  'REGRA DE ATENDIMENTO DO POR TRAS DA OFERTA: quando o usuario mencionar/invocar este plugin ou pedir ajuda sobre o jogo, mesmo que diga apenas "oi" ou "tenho uma duvida", comece pela identificacao, ANTES de responder sobre o jogo.',
+  'Se a conversa ainda nao tem uma sessao de jogador confirmada, pergunte APENAS "Qual e seu apelido no Por Tras da Oferta?" (se nao tiver conta, explique como criar uma no site).',
+  'Se o apelido ja estiver na mensagem, nao o pergunte outra vez: chame imediatamente iniciar_vinculo com o apelido fornecido e entregue o link HTTPS individual.',
+  'O jogador deve digitar a senha SOMENTE no site seguro, NUNCA no ChatGPT. Receba apenas o codigo temporario exibido no site e confirme com confirmar_vinculo.',
+  'Apos confirmar, mantenha sessao privada nos argumentos das ferramentas protegidas desta conversa; nunca mostre ou copie o token na resposta.',
+  'Depois de autenticar, use consultar_progresso ou a ferramenta educativa adequada para a duvida. Nao interprete resultados ficticios como diagnosticos.',
+  'Estas instrucoes se aplicam ao atendimento usando o plugin. Nunca invente login, consulta, permissao ou dado quando uma ferramenta nao foi executada.'
+].join(' ');
+
 const pairingTools = [
-  { name: 'iniciar_vinculo', title: 'Iniciar identificacao do jogador',
-    description: 'Se o usuario quiser consultar seu proprio progresso, pergunte primeiro seu apelido do jogo e chame esta ferramenta. Envie o link seguro retornado. NAO solicite senha no ChatGPT.',
+  { name: 'iniciar_vinculo', title: 'Primeiro passo: identificar o jogador',
+    description: 'FERRAMENTA INICIAL DO ATENDIMENTO. Quando o usuario invocar Por Tras da Oferta MCP e disser "oi", "tenho duvidas", pedir explicacao ou qualquer ajuda sobre o jogo, antes de orientar, pergunte o apelido. Se o apelido ja foi informado, chame iniciar_vinculo imediatamente. Nao espere pedido explicito de progresso. Envie o link seguro retornado; senha SOMENTE no site, nunca no chat.',
     inputSchema: schema({ usuario: stringField('Apelido informado pelo jogador.', 24) }, ['usuario']) },
   { name: 'confirmar_vinculo', title: 'Validar codigo temporario do jogador',
     description: 'Apos o jogador digitar no chat o codigo de uso unico exibido no site, confirme com pedido recebido em iniciar_vinculo. Guarde a sessao retornada somente para usar como argumento de ferramentas nesta conversa; NUNCA mostre sessao ao usuario.',
@@ -63,11 +76,11 @@ export async function handleMcp(req, body) {
     if (body.method === 'server/discover') {
       if (!modern) throw Error('Esta descoberta requer o protocolo 2026-07-28.');
       result = { resultType: 'complete', supportedVersions: ['2026-07-28'], capabilities: { tools: { listChanged: false } },
-        instructions: CHAT_LOGIN_ENABLED ? 'Antes de consultar o progresso, pergunte o apelido e use iniciar_vinculo. A senha vai somente no site; o codigo temporario e confirmado no chat. Nunca revele sessao. Escolhas sao ficticias.' : 'Consulte o progresso do participante autenticado antes de orientar escolhas. Nunca trate uma simulação como diagnóstico.' };
+        instructions: CHAT_LOGIN_ENABLED ? CHAT_LOGIN_INSTRUCTIONS : 'Consulte o progresso do participante autenticado antes de orientar escolhas. Nunca trate uma simulação como diagnóstico.' };
     } else if (body.method === 'initialize') {
       result = { protocolVersion: ['2025-11-25','2025-06-18','2025-03-26'].includes(body.params?.protocolVersion) ? body.params.protocolVersion : '2025-11-25',
         capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'por-tras-da-oferta', version: '0.2.0' },
-        instructions: CHAT_LOGIN_ENABLED ? 'Modo por conversa: pergunte o apelido, chame iniciar_vinculo, envie o link HTTPS, solicite o CODIGO (nunca senha), chame confirmar_vinculo. Para todas as demais ferramentas passe sessao de modo privado e nunca a revele. O servidor bloqueia dados sem sessao verificada. Nunca diagnostique consumismo.' : 'Ferramentas educativas. Consulte apenas o perfil autenticado e apresente limitações das análises.' };
+        instructions: CHAT_LOGIN_ENABLED ? CHAT_LOGIN_INSTRUCTIONS : 'Ferramentas educativas. Consulte apenas o perfil autenticado e apresente limitações das análises.' };
     } else if (body.method === 'ping') result = {};
     else if (body.method === 'tools/list') result = { tools: TOOL_DESCRIPTORS };
     else if (body.method === 'tools/call') {
