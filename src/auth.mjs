@@ -34,11 +34,15 @@ export async function register({ username, password, invite }) {
   });
   return { id: user.id, username: user.username };
 }
-export async function login({ username, password }) {
-  if (typeof username !== 'string' || typeof password !== 'string') throw Error('Credenciais inválidas.');
+export async function verifyCredentials(username, password) {
+  if (typeof username !== 'string' || typeof password !== 'string' || password.length > 128) return null;
   const user = await read(db => db.users.find(u => u.username.toLowerCase() === username.toLowerCase()));
-  const actual = hashedPassword(password.slice(0, 129), user?.salt || '00000000000000000000000000000000');
-  if (!user || !safeEqual(actual, user.passwordHash)) throw Error('Apelido ou senha incorretos.');
+  const actual = hashedPassword(password, user?.salt || '00000000000000000000000000000000');
+  return user && safeEqual(actual, user.passwordHash) ? user : null;
+}
+export async function login({ username, password }) {
+  const user = await verifyCredentials(username, password);
+  if (!user) throw Error('Apelido ou senha incorretos.');
   const token = newToken(), hash = sha(token);
   await update(db => { db.sessions.push({ hash, userId: user.id, csrf: newToken(16), expires: Date.now() + 8 * 3600000 }); });
   return token;
