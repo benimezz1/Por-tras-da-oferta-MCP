@@ -8,11 +8,11 @@ Jogo educativo e servidor **Model Context Protocol (MCP)** para o Ciclo 4 de Ló
 
 - Criação de contas por **apelido**, senha protegida por `scrypt` e código de inscrição da bancada (sem e-mail ou nome real).
 - Duas ou mais contas podem jogar ao mesmo tempo. O histórico e o orçamento fictício são isolados por ID de usuário.
-- Quatro desafios de compra; reconhecimento de técnicas e resumo por participante.
+- Campanha atual: importação manual do JSON C4 de cinco dias e dez estratégias, por conta autenticada. Os quatro desafios de compra continuam apenas como protótipo anterior.
 - Analisador textual heurístico e biblioteca com oito estratégias. Não verifica fraudes, preços reais ou diagnósticos psicológicos.
 - MCP remoto em `/mcp` por Streamable HTTP, com suporte a mensagens JSON-RPC, `initialize` legado e `server/discover` moderno.
 - OAuth 2.1 experimental para ChatGPT: fluxo de autorização com **PKCE S256**, DCR com callbacks permitidos e token Bearer associado a um participante. Sem API key da OpenAI.
-- Ferramentas MCP: `get_profile`, `consultar_progresso`, `analisar_anuncio`, `avaliar_compra`, `explicar_estrategia`.
+- Ferramentas MCP: `get_profile`, `consultar_progresso` (prioriza C4), `consultar_percurso_c4`, `analisar_anuncio`, `avaliar_compra`, `explicar_estrategia`.
 
 ## Execução local sem Docker
 
@@ -131,3 +131,44 @@ Desabilitar OAuth **não** habilita plugins em contas sem acesso a esse recurso.
 5. Avaliar submissão do plugin ao diretório somente após auditoria, política de privacidade e testes de compatibilidade.
 
 Fontes técnicas: https://developers.cloudflare.com/tunnel/get-started/ ; https://developers.openai.com/plugins/build/auth ; https://modelcontextprotocol.io/specification/2025-11-25/basic/transports .
+
+
+## Exportação JSON da campanha atual (Semana até a viagem)
+
+O jogo principal (`/`) exporta o **percurso C4 de cinco dias** como arquivo JSON
+versionado (`formato: "por-tras-da-oferta/c4-semana"`, `versao: 1`).
+Use o botão **Exportar JSON da semana** no Perfil (inclusive durante a partida)
+ou no **Raio-x final**. O arquivo inclui o estado local da partida: conteúdos
+e interações vistos, algoritmo e personalização, sinais de pressão e estratégias,
+compras fictícias, faturas e assinaturas, vibe, conversas, notificações, quiz,
+meta financeira e indicadores de fechamento. A campanha clássica de seis capítulos
+continua com seu exportador legado, mas **não é compatível** com o novo importador.
+
+**Como enviar ao MCP:** o download não envia nada automaticamente. O participante
+deve abrir o portal do MCP, criar/entrar em sua conta com apelido fictício e código
+de inscrição da apresentação, selecionar o JSON e clicar em **Importar percurso**.
+O portal usa `POST /api/c4/import`, com cookie de sessão e validação do formato;
+a importação mais recente substitui a anterior da mesma conta, e pode ser apagada
+em **Excluir meu percurso importado**. O MCP oferece `consultar_progresso` para
+o resumo C4 e `consultar_percurso_c4` para seções detalhadas; a autenticação
+via OAuth ou vínculo por conversa continua obrigatória.
+
+A nova API e o frontend pertencem a **repositórios separados**. Publicar/mesclar
+somente um deles não completa a integração; o servidor MCP precisa ser
+reimplantado/reiniciado em seu ambiente próprio. Dados fictícios enviados pelo
+jogador não constituem prova de autoria ou histórico real. Nenhuma compra é real,
+não se faz diagnóstico psicológico e não se deve exportar dados pessoais de menores.
+
+### API do importador C4
+
+| Método | Rota | Uso |
+|---|---|---|
+| POST | `/api/c4/import` | Arquivo JSON C4 versão 1, com cookie de sessão; tamanho máximo 1 MiB |
+| GET | `/api/c4/progress` | Devolve `{importado,resumo}` somente da conta autenticada |
+| POST | `/api/c4/delete` | `{confirmar:true}` exclui a partida importada da conta |
+
+Os dados são armazenados no mesmo `DATA_FILE` protegido do MCP e são derivados
+de uma simulação no navegador, não atestados pelo backend. O servidor recalcula os
+indicadores em vez de confiar no campo `resumo` recebido. A importação é
+idempotente para a mesma sessão e data de exportação. O modo clássico
+`/api/game` e seu reset continuam disponíveis para compatibilidade.
