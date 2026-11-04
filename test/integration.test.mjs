@@ -82,4 +82,31 @@ test('cadastro, isolamento entre jogadores, OAuth e ferramentas MCP', { timeout:
   assert.equal(modern.result.supportedVersions[0],'2026-07-28');
   const profile = await rpc({jsonrpc:'2.0',id:5,method:'tools/call',params:{name:'get_profile',arguments:{}}},'2025-11-25');
   assert.equal(profile.result.structuredContent.id,dataA.resumo.participante.id);
+  assert.ok(listed.result.tools.some(x=>x.name==='consultar_percurso_c4'));
+  const keys=['urgencia','escassez','prova_social','influencia','personalizacao','fomo','preco','dark_patterns','recompensa','emocao'];
+  const payloadC4={
+    formato:'por-tras-da-oferta/c4-semana',versao:1,campanha:'semana-ate-a-viagem',
+    exportadoEm:'2026-11-04T14:00:00.000Z',simulado:true,
+    sessao:{id:'c4-integracao-usuario-1234',iniciadaEm:null,concluidaEm:null},
+    estado:{
+      version:4,started:true,finished:false,day:2,phase:1,endStep:0,
+      runId:'c4-integracao-usuario-1234',wallet:510,goal:400,coins:5,
+      personalized:true,feedItems:[{id:'p1',kind:'post',day:1}],purchases:[],
+      viewed:['fone'],liked:[],likedAds:[],bookmarks:[],cart:[],events:[],notifs:[],
+      fixes:[],invoice:[],subscriptions:[],reviews:[],
+      pressure:{exposed:Object.fromEntries(keys.map(k=>[k,k==='urgencia'?1:0])),
+        influenced:Object.fromEntries(keys.map(k=>[k,[]])),
+        moments:Object.fromEntries(keys.map(k=>[k,k==='urgencia'?['Cronômetro']:[]]))},
+      algorithm:{events:[],impressions:{}},vibe:{value:64,log:[]},quiz:{},
+      stories:[],threads:{},coupons:[],hiddenPosts:[],signals:{}
+    }
+  };
+  const imported=await request('/api/c4/import',payloadC4,a);
+  assert.equal(imported.status,201,await imported.clone().text());
+  const newProgress=await rpc({jsonrpc:'2.0',id:6,method:'tools/call',params:{name:'consultar_progresso',arguments:{}}},'2025-11-25');
+  assert.equal(newProgress.result.structuredContent.campanha,'semana-ate-a-viagem');
+  assert.equal(newProgress.result.structuredContent.economia.saldoAtual,510);
+  const detailed=await rpc({jsonrpc:'2.0',id:7,method:'tools/call',params:{name:'consultar_percurso_c4',arguments:{secao:'estrategias'}}},'2025-11-25');
+  assert.equal(detailed.result.structuredContent.estrategias.length,10);
+  assert.equal(detailed.result.structuredContent.estrategias.find(s=>s.codigo==='urgencia').exposicoes,1);
 });

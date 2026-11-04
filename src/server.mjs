@@ -6,6 +6,7 @@ import { SCENARIOS, summarize, recordChoice } from './scenarios.mjs';
 import { CHAVES_ESTRATEGIAS } from './conhecimento.mjs';
 import { analisarTextoAnuncio } from './anuncios.mjs';
 import { handleMcp } from './mcp.mjs';
+import { importC4, getC4, summarizeC4, C4_MAX_BYTES } from './c4-import.mjs';
 import { CHAT_LOGIN_ENABLED, linkPageInfo, linkPage, linkCodePage, verifyChatLink } from './chat-auth.mjs';
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3100);
@@ -16,8 +17,8 @@ const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '
 function send(res, status, obj, headers = {}) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers }); res.end(JSON.stringify(obj)); }
 function page(res, status, content) { res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(content); }
 function redirect(res, where) { res.writeHead(302, { Location: where, 'Cache-Control': 'no-store' }); res.end(); }
-async function bodyText(req, max = 12000) { let s = ''; for await (const chunk of req) { s += chunk.toString('utf8'); if (s.length > max) throw Object.assign(Error('Requisição muito grande.'), { status: 413 }); } return s; }
-const jsonBody = async req => { if (!(req.headers['content-type'] || '').startsWith('application/json')) throw Error('Use application/json.'); const data = JSON.parse(await bodyText(req)); if (!data || typeof data !== 'object' || Array.isArray(data)) throw Error('JSON inválido.'); return data; };
+async function bodyText(req, max = 12000) { const chunks = []; let bytes = 0; for await (const chunk of req) { bytes += chunk.length; if (bytes > max) throw Object.assign(Error('Requisição muito grande.'), { status: 413 }); chunks.push(chunk); } return Buffer.concat(chunks).toString('utf8'); }
+const jsonBody = async (req, max = 12000) => { if (!(req.headers['content-type'] || '').startsWith('application/json')) throw Error('Use application/json.'); const data = JSON.parse(await bodyText(req, max)); if (!data || typeof data !== 'object' || Array.isArray(data)) throw Error('JSON inválido.'); return data; };
 function throttle(req, kind, max = 15) {
   const ip = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || 'unknown').slice(0, 100);
   const key = kind + ':' + ip; const now = Date.now(); const item = limitMap.get(key) || { start: now, count: 0 };
@@ -91,6 +92,21 @@ const server = createServer(async (req, res) => {
       const session = await sessionOf(req);
       if (!session) return send(res, 401, { erro: 'Faça login.' });
       if (req.method === 'GET' && path.pathname === '/api/me') return send(res, 200, { usuario: privateUser(session.user) });
+      if (req.method === 'GET' && path.pathname === '/api/c4/progress') {
+        const record = await read(db => getC4(db, session.user));
+        return send(res, 200, record ? { importado: true, importadoEm: record.importadoEm, resumo: summarizeC4(session.user, record.document) } : { importado: false, resumo: null });
+      }
+      if (req.method === 'POST' && path.pathname === '/api/c4/import') {
+        throttle(req, 'c4-import', 15);
+        const payload = await jsonBody(req, C4_MAX_BYTES);
+        const result = await update(db => importC4(db, session.user, payload));
+        return send(res, result.repetido ? 200 : 201, result);
+      }
+      if (req.method === 'POST' && path.pathname === '/api/c4/delete') {
+        if ((await jsonBody(req)).confirmar !== true) return send(res, 422, { erro: 'Confirme explicitamente a exclusão do percurso importado.' });
+        await update(db => { db.c4Imports = (db.c4Imports||[]).filter(x => x.userId !== session.user.id); });
+        return send(res, 200, { excluido: true });
+      }
       if (req.method === 'GET' && path.pathname === '/api/game') return send(res, 200, await read(db => ({ resumo: summarize(session.user, db.choices),
         cenarios: SCENARIOS.map(({ id, title, text, price }) => ({ id, title, text, price })), estrategias: CHAVES_ESTRATEGIAS })));
       if (req.method === 'POST' && path.pathname === '/api/game/choice') {
@@ -107,7 +123,7 @@ const server = createServer(async (req, res) => {
     return send(res, 404, { erro: 'Rota não encontrada.' });
   } catch (e) {
     if (e instanceof SyntaxError) return send(res, 400, { erro: 'JSON inválido.' });
-    if (e.status === 429 || e.status === 413) return send(res, e.status, { erro: e.message });
+    if ([409, 413, 422, 429].includes(e.status)) return send(res, e.status, { erro: e.message });
     if (path.pathname === '/oauth/token') return send(res, 400, { error: 'invalid_grant', error_description: e.message });
     console.error('Erro de requisição:', e.message);
     if (!res.headersSent) send(res, 400, { erro: e.message || 'Erro na solicitação.' });

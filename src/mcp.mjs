@@ -2,6 +2,7 @@ import { authenticateBearer, bearerChallenge } from './auth.mjs';
 import { CHAT_LOGIN_ENABLED, beginChatLink, confirmChatLink, authenticateChatSession } from './chat-auth.mjs';
 import { read } from './storage.mjs';
 import { summarize } from './scenarios.mjs';
+import { getC4, summarizeC4, detailC4 } from './c4-import.mjs';
 import { analisarTextoAnuncio } from './anuncios.mjs';
 import { avaliarCompra } from './avaliacao.mjs';
 import { CHAVES_ESTRATEGIAS, obterEstrategia, listarEstrategias } from './conhecimento.mjs';
@@ -12,8 +13,11 @@ const TOOLS = [
   { name: 'get_profile', title: 'Identificar participante conectado', description: 'Retorna identidade estável da conta autenticada do jogo. Use para confirmar que está ajudando a pessoa correta.',
     inputSchema: schema(), outputSchema: schema({ id: { type: 'string' }, name: { type: 'string' }, nickname: { type: 'string' } }, ['id']),
     securitySchemes: oauth(['profile.read']), _meta: { 'openai/profile': true }, requiredScopes: ['profile.read'] },
-  { name: 'consultar_progresso', title: 'Consultar progresso no jogo', description: 'Leia exclusivamente os resultados fictícios da pessoa autenticada, sem solicitar nome ou código de outro participante. Use os pontos de revisão para orientar explicações personalizadas; não diagnostique consumismo.',
+  { name: 'consultar_progresso', title: 'Consultar progresso no jogo', description: 'Priorize o percurso importado da Semana até a viagem (cinco dias e dez estratégias). Se ele não existir, indique que o resultado é do protótipo legado. Dados são fictícios, nunca um diagnóstico.',
     inputSchema: schema(), securitySchemes: oauth(['game.read']), requiredScopes: ['game.read'] },
+  { name: 'consultar_percurso_c4', title: 'Examinar uma área do percurso C4', description: 'Consulte os detalhes importados voluntariamente pelo próprio participante da Semana até a viagem. Escolha uma seção: economia, estratégias, quiz, vibe, algoritmo, jornada ou interações. Não interprete simulações como compras reais.',
+    inputSchema: schema({ secao: { type: 'string', enum: ['resumo','economia','estrategias','quiz','vibe','algoritmo','jornada','interacoes'], description: 'Seção do percurso C4 importado a consultar.' } }),
+    securitySchemes: oauth(['game.read']), requiredScopes: ['game.read'] },
   { name: 'analisar_anuncio', title: 'Identificar persuasão em anúncio', description: 'Analise texto do anúncio, reconhecendo indícios de urgência, escassez, FOMO, prova social e outros. Para anúncios em imagens, primeiro extraia ou descreva o texto visível na imagem. A ferramenta não comprova fraude nem autenticidade.',
     inputSchema: schema({ texto: stringField('Texto do anúncio ou descrição fiel do conteúdo visual.') }, ['texto']), securitySchemes: oauth(['offer.analyze']), requiredScopes: ['offer.analyze'] },
   { name: 'avaliar_compra', title: 'Refletir sobre decisão de compra', description: 'Compara preço com orçamento fictício e propõe perguntas críticas. Não recomenda comprar nem substitui análise independente de preços.',
@@ -89,7 +93,14 @@ export async function handleMcp(req, body) {
             _meta: { 'mcp/www_authenticate': [`${bearerChallenge()}, error="insufficient_scope", error_description="Permissao adicional necessaria"`] } };
         } else {
           if (name === 'get_profile') result = ok({ id: identity.user.id, name: identity.user.username, nickname: identity.user.username });
-          if (name === 'consultar_progresso') result = ok(await read(db => summarize(identity.user, db.choices)));
+          if (name === 'consultar_progresso') result = ok(await read(db => {
+            const c4 = getC4(db, identity.user);
+            return c4 ? summarizeC4(identity.user, c4.document) : { ...summarize(identity.user, db.choices), origem: 'prototipo-legado-4-cenarios', aviso_c4: 'Nenhum percurso da Semana até a viagem foi importado nesta conta.' };
+          }));
+          if (name === 'consultar_percurso_c4') result = ok(await read(db => {
+            const c4 = getC4(db, identity.user);
+            return c4 ? detailC4(identity.user, c4, a.secao || 'resumo') : { importado: false, aviso: 'Primeiro exporte o JSON no jogo atual e importe-o no portal do MCP com a sua conta.' };
+          }));
           if (name === 'analisar_anuncio') result = ok(analisarTextoAnuncio(a.texto));
           if (name === 'avaliar_compra') result = ok(avaliarCompra(a));
           if (name === 'explicar_estrategia') result = ok(a.codigo ? obterEstrategia(a.codigo) : listarEstrategias());

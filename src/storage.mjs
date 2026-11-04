@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
 const file = resolve(process.env.DATA_FILE || './data/runtime.json');
-const empty = () => ({ version: 1, users: [], sessions: [], clients: [], pending: [], codes: [], tokens: [], chatLinks: [], chatSessions: [], choices: [] });
+const empty = () => ({ version: 1, users: [], sessions: [], clients: [], pending: [], codes: [], tokens: [], chatLinks: [], chatSessions: [], choices: [], c4Imports: [] });
 let state;
 let loading;
 let queue = Promise.resolve();
