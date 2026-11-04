@@ -17,7 +17,7 @@ const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '
 function send(res, status, obj, headers = {}) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers }); res.end(JSON.stringify(obj)); }
 function page(res, status, content) { res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(content); }
 function redirect(res, where) { res.writeHead(302, { Location: where, 'Cache-Control': 'no-store' }); res.end(); }
-async function bodyText(req, max = 12000) { let s = ''; let bytes = 0; for await (const chunk of req) { bytes += chunk.length; if (bytes > max) throw Object.assign(Error('Requisição muito grande.'), { status: 413 }); s += chunk.toString('utf8'); } return s; }
+async function bodyText(req, max = 12000) { const chunks = []; let bytes = 0; for await (const chunk of req) { bytes += chunk.length; if (bytes > max) throw Object.assign(Error('Requisição muito grande.'), { status: 413 }); chunks.push(chunk); } return Buffer.concat(chunks).toString('utf8'); }
 const jsonBody = async (req, max = 12000) => { if (!(req.headers['content-type'] || '').startsWith('application/json')) throw Error('Use application/json.'); const data = JSON.parse(await bodyText(req, max)); if (!data || typeof data !== 'object' || Array.isArray(data)) throw Error('JSON inválido.'); return data; };
 function throttle(req, kind, max = 15) {
   const ip = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || 'unknown').slice(0, 100);
