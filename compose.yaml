@@ -5,6 +5,9 @@ services:
     environment:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?Configure PUBLIC_BASE_URL em .env}
       REGISTRATION_CODE: ${REGISTRATION_CODE:?Configure REGISTRATION_CODE em .env}
+      C4_GAME_ORIGIN: ${C4_GAME_ORIGIN:-https://jogo.portrasdaoferta.workers.dev}
+      C4_SIGNUP_ENABLED: ${C4_SIGNUP_ENABLED:-true}
+      CHAT_LOGIN_ENABLED: ${CHAT_LOGIN_ENABLED:-false}
       DATA_FILE: /data/runtime.json
       HOST: 0.0.0.0
       PORT: "3100"
