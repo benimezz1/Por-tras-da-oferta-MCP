@@ -13,9 +13,9 @@ const TOOLS = [
   { name: 'get_profile', title: 'Identificar participante conectado', description: 'Retorna identidade estável da conta autenticada do jogo. Use para confirmar que está ajudando a pessoa correta.',
     inputSchema: schema(), outputSchema: schema({ id: { type: 'string' }, name: { type: 'string' }, nickname: { type: 'string' } }, ['id']),
     securitySchemes: oauth(['profile.read']), _meta: { 'openai/profile': true }, requiredScopes: ['profile.read'] },
-  { name: 'consultar_progresso', title: 'Consultar progresso no jogo', description: 'Priorize o percurso importado da Semana até a viagem (cinco dias e dez estratégias). Se ele não existir, indique que o resultado é do protótipo legado. Dados são fictícios, nunca um diagnóstico.',
+  { name: 'consultar_progresso', title: 'Consultar progresso no jogo', description: 'Priorize o percurso da Semana até a viagem (cinco dias e dez estratégias), enviado automaticamente após o quiz pelo jogo da conta. Se ele não existir, explique que falta concluir o quiz ou a sincronização e que o resultado abaixo é do protótipo legado. Dados são fictícios, nunca um diagnóstico.',
     inputSchema: schema(), securitySchemes: oauth(['game.read']), requiredScopes: ['game.read'] },
-  { name: 'consultar_percurso_c4', title: 'Examinar uma área do percurso C4', description: 'Consulte os detalhes importados voluntariamente pelo próprio participante da Semana até a viagem. Escolha uma seção: economia, estratégias, quiz, vibe, algoritmo, jornada ou interações. Não interprete simulações como compras reais.',
+  { name: 'consultar_percurso_c4', title: 'Examinar uma área do percurso C4', description: 'Consulte os detalhes da Semana até a viagem, sincronizados automaticamente ao finalizar o quiz na conta do participante. Escolha uma seção: economia, estratégias, quiz, vibe, algoritmo, jornada ou interações. Não interprete simulações como compras reais.',
     inputSchema: schema({ secao: { type: 'string', enum: ['resumo','economia','estrategias','quiz','vibe','algoritmo','jornada','interacoes'], description: 'Seção do percurso C4 importado a consultar.' } }),
     securitySchemes: oauth(['game.read']), requiredScopes: ['game.read'] },
   { name: 'analisar_anuncio', title: 'Identificar persuasão em anúncio', description: 'Analise texto do anúncio, reconhecendo indícios de urgência, escassez, FOMO, prova social e outros. Para anúncios em imagens, primeiro extraia ou descreva o texto visível na imagem. A ferramenta não comprova fraude nem autenticidade.',
@@ -95,11 +95,11 @@ export async function handleMcp(req, body) {
           if (name === 'get_profile') result = ok({ id: identity.user.id, name: identity.user.username, nickname: identity.user.username });
           if (name === 'consultar_progresso') result = ok(await read(db => {
             const c4 = getC4(db, identity.user);
-            return c4 ? summarizeC4(identity.user, c4.document) : { ...summarize(identity.user, db.choices), origem: 'prototipo-legado-4-cenarios', aviso_c4: 'Nenhum percurso da Semana até a viagem foi importado nesta conta.' };
+            return c4 ? summarizeC4(identity.user, c4.document) : { ...summarize(identity.user, db.choices), origem: 'prototipo-legado-4-cenarios', aviso_c4: 'Nenhum percurso final da Semana até a viagem foi sincronizado nesta conta. Conclua o quiz no jogo e verifique o status de envio ao MCP.' };
           }));
           if (name === 'consultar_percurso_c4') result = ok(await read(db => {
             const c4 = getC4(db, identity.user);
-            return c4 ? detailC4(identity.user, c4, a.secao || 'resumo') : { importado: false, aviso: 'Primeiro exporte o JSON no jogo atual e importe-o no portal do MCP com a sua conta.' };
+            return c4 ? detailC4(identity.user, c4, a.secao || 'resumo') : { importado: false, aviso: 'Conclua os cinco dias e as cinco perguntas do quiz no jogo com sua conta. O envio ao MCP é automático; caso apareça falha no final, use o botão de reenviar e vincule a mesma conta no chat.' };
           }));
           if (name === 'analisar_anuncio') result = ok(analisarTextoAnuncio(a.texto));
           if (name === 'avaliar_compra') result = ok(avaliarCompra(a));

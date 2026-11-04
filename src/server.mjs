@@ -7,6 +7,7 @@ import { CHAVES_ESTRATEGIAS } from './conhecimento.mjs';
 import { analisarTextoAnuncio } from './anuncios.mjs';
 import { handleMcp } from './mcp.mjs';
 import { importC4, getC4, summarizeC4, C4_MAX_BYTES } from './c4-import.mjs';
+import { GAME_ORIGIN, createPlayer, loginPlayer, identifyPlayer, revokePlayer } from './c4-client-auth.mjs';
 import { CHAT_LOGIN_ENABLED, linkPageInfo, linkPage, linkCodePage, verifyChatLink } from './chat-auth.mjs';
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3100);
@@ -30,14 +31,28 @@ function throttle(req, kind, max = 15) {
 const privateUser = user => ({ id: user.id, username: user.username });
 function loginPage() { return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Conectar conta do jogo</title><body style="font:17px system-ui;max-width:500px;margin:70px auto;padding:20px"><h1>Por Trás da Oferta</h1><p>Faça login com a mesma conta do jogo para autorizar a conexão do assistente.</p><form id="login"><input name="username" autocomplete="username" placeholder="Apelido" required style="padding:12px"><input name="password" type="password" autocomplete="current-password" placeholder="Senha" required style="padding:12px"><button>Entrar</button></form><p id="status"></p><script>document.getElementById('login').onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});if(r.ok)location.reload();else document.getElementById('status').textContent=(await r.json()).erro||'Falha no login';};</script></body></html>`; }
 function consentPage(ctx) { return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Autorizar conexão</title><body style="font:17px system-ui;max-width:550px;margin:70px auto;padding:20px"><h1>Conectar ao Por Trás da Oferta</h1><p><b>${escape(ctx.clientName)}</b> está solicitando acesso educativo à conta <b>${escape(ctx.username)}</b>.</p><p>Permissões: <code>${escape(ctx.scopes.join(', '))}</code>. A IA poderá consultar o progresso fictício e analisar anúncios. Ela não poderá alterar o jogo.</p><form method="post" action="/oauth/consent"><input type="hidden" name="pendingId" value="${escape(ctx.id)}"><input type="hidden" name="csrf" value="${escape(ctx.csrf)}"><button name="approve" value="yes">Autorizar</button> <button name="approve" value="no">Recusar</button></form></body></html>`; }
-const corsOriginAllowed = req => !req.headers.origin || req.headers.origin === ORIGIN;
+const isC4Client = path => path.pathname.startsWith('/api/c4/client/');
+const corsOriginAllowed = (req,path) => !req.headers.origin || req.headers.origin === ORIGIN ||
+  (isC4Client(path) && req.headers.origin === GAME_ORIGIN);
 const needsOrigin = req => ['POST', 'PUT', 'DELETE'].includes(req.method);
 const server = createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer'); res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   const path = new URL(req.url, ORIGIN);
   try {
-    if (needsOrigin(req) && !corsOriginAllowed(req)) return send(res, 403, { erro: 'Origin não autorizado.' });
+    if (isC4Client(path) && req.headers.origin === GAME_ORIGIN) {
+      res.setHeader('Access-Control-Allow-Origin', GAME_ORIGIN);
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Max-Age', '600');
+      res.setHeader('Vary', 'Origin');
+    }
+    if (req.method === 'OPTIONS' && isC4Client(path)) {
+      if (req.headers.origin !== GAME_ORIGIN && req.headers.origin !== ORIGIN)
+        return send(res, 403, { erro: 'Origem não autorizada.' });
+      res.writeHead(204, {'Cache-Control':'no-store'});return res.end();
+    }
+    if (needsOrigin(req) && !corsOriginAllowed(req,path)) return send(res, 403, { erro: 'Origin não autorizado.' });
     if (req.method === 'GET' && path.pathname === '/') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(await readFile(html)); }
     if (req.method === 'GET' && path.pathname === '/health') return send(res, 200, { status: 'ok', projeto: 'por-tras-da-oferta', mcp: '/mcp' });
     if (req.method === 'GET' && ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'].includes(path.pathname)) return send(res, 200, metadata('resource'));
@@ -88,6 +103,35 @@ const server = createServer(async (req, res) => {
       if (result.httpStatus === 202) { res.writeHead(202, { 'Cache-Control': 'no-store' }); return res.end(); }
       return send(res, result.httpStatus, result.payload, result.challenge ? { 'WWW-Authenticate': result.challenge } : {});
     }
+    if (isC4Client(path)) {
+      if (req.method === 'POST' && path.pathname === '/api/c4/client/signup') {
+        throttle(req,'c4-signup',5);
+        return send(res,201,await createPlayer(await jsonBody(req)));
+      }
+      if (req.method === 'POST' && path.pathname === '/api/c4/client/login') {
+        throttle(req,'c4-login',18);
+        return send(res,200,await loginPlayer(await jsonBody(req)));
+      }
+      const identity = await identifyPlayer(req);
+      if (!identity) return send(res,401,{erro:'Sessão expirada ou inválida. Entre novamente.'});
+      if (req.method === 'GET' && path.pathname === '/api/c4/client/me')
+        return send(res,200,{usuario:{id:identity.user.id,username:identity.user.username}});
+      if (req.method === 'POST' && path.pathname === '/api/c4/client/logout') {
+        await revokePlayer(req);return send(res,200,{sucesso:true});
+      }
+      if (req.method === 'POST' && path.pathname === '/api/c4/client/complete') {
+        throttle(req,'c4-auto-submit',15);
+        const payload=await jsonBody(req,C4_MAX_BYTES);
+        if (payload?.estado?.finished!==true || payload?.estado?.endStep!==3 ||
+          !payload?.estado?.quiz || Object.keys(payload.estado.quiz).length!==5)
+          return send(res,422,{erro:'Conclua os cinco dias e responda as cinco questões antes do envio.'});
+        const result=await update(db=>importC4(db,identity.user,payload));
+        return send(res,result.repetido?200:201,{sucesso:true,importado:result.importado,
+          repetido:result.repetido,partida:result.resumo.partida.id,
+          quiz:result.resumo.quiz,usuario:{id:identity.user.id,username:identity.user.username}});
+      }
+      return send(res,404,{erro:'Rota C4 não encontrada.'});
+    }
     if (path.pathname.startsWith('/api/')) {
       const session = await sessionOf(req);
       if (!session) return send(res, 401, { erro: 'Faça login.' });
@@ -123,7 +167,7 @@ const server = createServer(async (req, res) => {
     return send(res, 404, { erro: 'Rota não encontrada.' });
   } catch (e) {
     if (e instanceof SyntaxError) return send(res, 400, { erro: 'JSON inválido.' });
-    if ([409, 413, 422, 429].includes(e.status)) return send(res, e.status, { erro: e.message });
+    if ([401, 403, 409, 413, 422, 429].includes(e.status)) return send(res, e.status, { erro: e.message });
     if (path.pathname === '/oauth/token') return send(res, 400, { error: 'invalid_grant', error_description: e.message });
     console.error('Erro de requisição:', e.message);
     if (!res.headersSent) send(res, 400, { erro: e.message || 'Erro na solicitação.' });

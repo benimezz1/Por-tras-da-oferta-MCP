@@ -8,7 +8,7 @@ Jogo educativo e servidor **Model Context Protocol (MCP)** para o Ciclo 4 de Ló
 
 - Criação de contas por **apelido**, senha protegida por `scrypt` e código de inscrição da bancada (sem e-mail ou nome real).
 - Duas ou mais contas podem jogar ao mesmo tempo. O histórico e o orçamento fictício são isolados por ID de usuário.
-- Campanha atual: importação manual do JSON C4 de cinco dias e dez estratégias, por conta autenticada. Os quatro desafios de compra continuam apenas como protótipo anterior.
+- Campanha atual: cadastro/login por apelido e senha antes da partida, com **envio automático do JSON C4 ao final do quiz**. A importação manual continua apenas como contingência. Os quatro desafios de compra são o protótipo anterior.
 - Analisador textual heurístico e biblioteca com oito estratégias. Não verifica fraudes, preços reais ou diagnósticos psicológicos.
 - MCP remoto em `/mcp` por Streamable HTTP, com suporte a mensagens JSON-RPC, `initialize` legado e `server/discover` moderno.
 - OAuth 2.1 experimental para ChatGPT: fluxo de autorização com **PKCE S256**, DCR com callbacks permitidos e token Bearer associado a um participante. Sem API key da OpenAI.
@@ -133,42 +133,70 @@ Desabilitar OAuth **não** habilita plugins em contas sem acesso a esse recurso.
 Fontes técnicas: https://developers.cloudflare.com/tunnel/get-started/ ; https://developers.openai.com/plugins/build/auth ; https://modelcontextprotocol.io/specification/2025-11-25/basic/transports .
 
 
-## Exportação JSON da campanha atual (Semana até a viagem)
+## Login e envio automático do jogo atual
 
-O jogo principal (`/`) exporta o **percurso C4 de cinco dias** como arquivo JSON
-versionado (`formato: "por-tras-da-oferta/c4-semana"`, `versao: 1`).
-Use o botão **Exportar JSON da semana** no Perfil (inclusive durante a partida)
-ou no **Raio-x final**. O arquivo inclui o estado local da partida: conteúdos
-e interações vistos, algoritmo e personalização, sinais de pressão e estratégias,
-compras fictícias, faturas e assinaturas, vibe, conversas, notificações, quiz,
-meta financeira e indicadores de fechamento. A campanha clássica de seis capítulos
-continua com seu exportador legado, mas **não é compatível** com o novo importador.
+O jogo de cinco dias é publicado no Worker estático em
+`https://jogo.portrasdaoferta.workers.dev`; **o MCP serve como backend de
+contas e armazenamento**. Antes de jogar, a pessoa usa somente um apelido
+fictício e uma senha (mínimo de 10 caracteres). O backend oferece
+`/api/c4/client/signup` e `/api/c4/client/login` sem exigir e-mail ou o
+código secreto do modo legado. O cadastro é limitado a 50 contas no total e
+há limitação por IP. Uma sessão opaca de 8 horas é guardada no navegador
+apenas na aba (`sessionStorage`), enquanto o banco mantém **somente o hash**
+desse token. O armazenamento das partidas do jogo é segregado por ID de conta.
 
-**Como enviar ao MCP:** o download não envia nada automaticamente. O participante
-deve abrir o portal do MCP, criar/entrar em sua conta com apelido fictício e código
-de inscrição da apresentação, selecionar o JSON e clicar em **Importar percurso**.
-O portal usa `POST /api/c4/import`, com cookie de sessão e validação do formato;
-a importação mais recente substitui a anterior da mesma conta, e pode ser apagada
-em **Excluir meu percurso importado**. O MCP oferece `consultar_progresso` para
-o resumo C4 e `consultar_percurso_c4` para seções detalhadas; a autenticação
-via OAuth ou vínculo por conversa continua obrigatória.
+Após os cinco dias e as cinco perguntas, o jogo chama automaticamente
+`POST /api/c4/client/complete` com o JSON C4 versão 1. O servidor valida a
+campanha concluída, associa o documento à **conta autenticada do token** e
+recalcula o resumo. Não confia no nome, ID de participante ou notas enviadas
+pelo navegador. O jogo confirma o recebimento apenas após HTTP 200/201 com
+identidade e partida correspondentes; se falhar, o progresso local permanece
+para nova tentativa. Nenhuma compra ou pagamento é real.
 
-A nova API e o frontend pertencem a **repositórios separados**. Publicar/mesclar
-somente um deles não completa a integração; o servidor MCP precisa ser
-reimplantado/reiniciado em seu ambiente próprio. Dados fictícios enviados pelo
-jogador não constituem prova de autoria ou histórico real. Nenhuma compra é real,
-não se faz diagnóstico psicológico e não se deve exportar dados pessoais de menores.
+O ChatGPT vê esse percurso pelas ferramentas `consultar_progresso` e
+`consultar_percurso_c4`, **depois** que o participante vincular essa mesma
+conta pelo OAuth ou pelo fluxo de código temporário. A senha nunca deve ser
+digitada no chat. O arquivo JSON não contém senha. O modo antigo continua
+compatível; o portal `/api/c4/import` permite importação manual em caso de
+contingência e `/api/c4/delete` exclui o registro.
 
-### API do importador C4
+### Novos endpoints da sessão C4
 
-| Método | Rota | Uso |
+| Método | Rota | Autorização |
 |---|---|---|
-| POST | `/api/c4/import` | Arquivo JSON C4 versão 1, com cookie de sessão; tamanho máximo 1 MiB |
-| GET | `/api/c4/progress` | Devolve `{importado,resumo}` somente da conta autenticada |
-| POST | `/api/c4/delete` | `{confirmar:true}` exclui a partida importada da conta |
+| POST | `/api/c4/client/signup` | Apelido e senha, sem código de inscrição |
+| POST | `/api/c4/client/login` | Apelido e senha; emite token de jogo |
+| GET | `/api/c4/client/me` | `Authorization: Bearer TOKEN` |
+| POST | `/api/c4/client/complete` | Bearer + JSON `c4-semana`, quiz final completo |
+| POST | `/api/c4/client/logout` | Bearer; invalida sessão |
+| GET | `/api/c4/progress` | Cookie do portal MCP, apenas mesma conta |
+| POST | `/api/c4/import` | Importação manual legada, cookie do portal MCP |
+| POST | `/api/c4/delete` | Excluir com confirmação, cookie do portal MCP |
 
-Os dados são armazenados no mesmo `DATA_FILE` protegido do MCP e são derivados
-de uma simulação no navegador, não atestados pelo backend. O servidor recalcula os
-indicadores em vez de confiar no campo `resumo` recebido. A importação é
-idempotente para a mesma sessão e data de exportação. O modo clássico
-`/api/game` e seu reset continuam disponíveis para compatibilidade.
+O CORS da sessão do jogo permite somente `C4_GAME_ORIGIN` (origem exata da
+página hospedada), com métodos e cabeçalhos limitados, **sem cookies
+cross-site**. As demais rotas não ganham CORS indiscriminado. Use sempre
+HTTPS em produção.
+
+### Configuração do backend e deploy
+
+No `.env` do MCP configure:
+
+```sh
+PUBLIC_BASE_URL=https://DOMINIO_REAL_DO_MCP
+C4_GAME_ORIGIN=https://jogo.portrasdaoferta.workers.dev
+C4_SIGNUP_ENABLED=true
+CHAT_LOGIN_ENABLED=true
+```
+
+No build do site estático configure
+`VITE_C4_MCP_ORIGIN=https://DOMINIO_REAL_DO_MCP`. O fallback
+`https://mcp.portrasdaoferta.workers.dev` é somente um endereço padrão
+**não verificado neste repositório**: confirme o hostname usado na implantação.
+O Compose propaga `C4_GAME_ORIGIN`, `C4_SIGNUP_ENABLED` e
+`CHAT_LOGIN_ENABLED` ao contêiner.
+
+A importação C4 continua sendo um envio de dados fictícios pelo navegador,
+e não uma fonte independente que comprove a autoria de cada interação ou
+permita diagnosticar o comportamento de alguém. Use apenas apelidos e
+estabeleça procedimento de exclusão dos registros após a apresentação.
