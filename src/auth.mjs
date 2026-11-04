@@ -21,18 +21,32 @@ const cookieToken = req => (req.headers.cookie || '').split(';').map(p => p.trim
 export const cookie = token => `pto_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=28800${PRODUCTION ? '; Secure' : ''}`;
 export const clearCookie = `pto_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${PRODUCTION ? '; Secure' : ''}`;
 
-export async function register({ username, password, invite }) {
-  if (!INVITE || !safeEqual(invite, INVITE)) throw Error('Código de inscrição inválido.');
-  if (typeof username !== 'string' || !/^[a-zA-Z0-9_.-]{3,24}$/.test(username)) throw Error('Apelido: 3 a 24 caracteres, sem espaços.');
-  if (typeof password !== 'string' || password.length < 10 || password.length > 128) throw Error('Senha: 10 a 128 caracteres.');
+async function createRegisteredUser({ username, password }) {
+  if (typeof username !== 'string' || !/^[a-zA-Z0-9_.-]{3,24}$/.test(username))
+    throw Error('Apelido: 3 a 24 caracteres, sem espaços.');
+  if (typeof password !== 'string' || password.length < 10 || password.length > 128)
+    throw Error('Senha: 10 a 128 caracteres.');
   const salt = randomBytes(16).toString('hex');
-  const user = { id: 'usr_' + newToken(12), username, salt, passwordHash: hashedPassword(password, salt), createdAt: Date.now() };
+  const user = { id: 'usr_' + newToken(12), username, salt,
+    passwordHash: hashedPassword(password, salt), createdAt: Date.now() };
   await update(db => {
     if (db.users.length >= 50) throw Error('Limite de inscrições da demonstração atingido.');
-    if (db.users.some(x => x.username.toLowerCase() === username.toLowerCase())) throw Error('Este apelido já está em uso.');
+    if (db.users.some(x => x.username.toLowerCase() === username.toLowerCase()))
+      throw Object.assign(Error('Este apelido já está em uso. Entre com sua senha ou escolha outro.'), { status: 409 });
     db.users.push(user);
   });
   return { id: user.id, username: user.username };
+}
+export async function register({ username, password, invite }) {
+  if (!INVITE || !safeEqual(invite, INVITE)) throw Error('Código de inscrição inválido.');
+  return createRegisteredUser({ username, password });
+}
+// Registro C4 da bancada: apenas apelido e senha. O servidor limita inscrições
+// por IP e número total de contas. Não expor dados reais de participantes.
+export async function registerC4(input) {
+  if (process.env.C4_SIGNUP_ENABLED === 'false')
+    throw Object.assign(Error('Criação de contas está temporariamente desativada.'), { status: 403 });
+  return createRegisteredUser(input);
 }
 export async function verifyCredentials(username, password) {
   if (typeof username !== 'string' || typeof password !== 'string' || password.length > 128) return null;
