@@ -74,7 +74,7 @@ crie/abra `production`. Adicione:
 | Tipo | Nome | Conteúdo |
 |---|---|---|
 | Secret | `MCP_DEPLOY_HOST` | Endereço **público SSH** da EC2 obtido na AWS, não `ip-172-31-5-211` nem domínio `workers.dev` |
-| Secret | `MCP_DEPLOY_SSH_KEY` | Conteúdo integral do arquivo privado `/home/ubuntu/.ssh/pto-ghdeploy-actions` |
+| Secret | `MCP_DEPLOY_SSH_KEY` | **Base64 em linha única** do arquivo privado `/home/ubuntu/.ssh/pto-ghdeploy-actions` |
 | Secret | `MCP_DEPLOY_KNOWN_HOSTS` | Uma linha `HOST ssh-ed25519 BASE64...` com a chave de HOST verificada da EC2 |
 | Variable (opcional) | `MCP_DEPLOY_PORT` | `22` por padrão |
 
@@ -102,18 +102,25 @@ Confirme o fingerprint pelo comando
 Não use `StrictHostKeyChecking=no` nem aceite `ssh-keyscan` sem
 comparar o fingerprint.
 
-Para obter **somente a chave privada** e colá-la diretamente no campo
-`MCP_DEPLOY_SSH_KEY` do GitHub, na EC2:
+Para gerar o segredo SSH no formato recomendado, execute NA EC2:
 
 ```bash
-cat /home/ubuntu/.ssh/pto-ghdeploy-actions
+# Conferir que o arquivo privado correto existe e e legivel.
+ssh-keygen -y -P '' -f /home/ubuntu/.ssh/pto-ghdeploy-actions >/dev/null &&
+  echo "Chave valida."
+
+# Gere uma string base64 de linha unica: cole a SAIDA DIRETAMENTE no
+# Environment Secret MCP_DEPLOY_SSH_KEY do GitHub, substituindo o valor antigo.
+base64 -w 0 /home/ubuntu/.ssh/pto-ghdeploy-actions
+printf '\\n'
 ```
 
-O conteúdo desse arquivo é segredo: **NUNCA cole aqui no ChatGPT,
-em logs, em issues, PRs ou no repositório**. Não compartilhe por e-mail
-ou screenshots. Depois de instalar o secret e validar o workflow,
-remova a chave privada temporária da EC2, caso não precise dela
-para rotação. A chave pública permanece autorizada.
+A string base64 e **equivalente a chave privada**, NAO e criptografia.
+Nunca cole esse valor no chat, em issue/PR, historico de comandos ou logs.
+A chave fica armazenada apenas no GitHub Secret e no arquivo protegido
+da EC2. Se o valor nao for valido, o workflow aborta antes do acesso SSH.
+O workflow aceita tambem a chave original multiline quando copiada
+integralmente, mas base64 evita erros de quebra de linha.
 
 ## Primeira publicação
 
