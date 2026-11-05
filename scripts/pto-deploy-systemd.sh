@@ -44,7 +44,7 @@ if [[ "$latest" != "$SHA" ]]; then
   fail "SHA $SHA nao e o ultimo commit da main ($latest). O proximo workflow fara o deploy atualizado."
 fi
 
-candidate="$(mktemp -d "$STATE/candidate.XXXXXXXX")"
+candidate="$(mktemp -d /tmp/pto-candidate.XXXXXXXX)"
 backup=""
 modified=false
 cleanup() {
@@ -104,7 +104,7 @@ for attempt in $(seq 1 18); do
 done
 [[ "$healthy" == true ]] || fail "Health local do MCP falhou apos restart."
 headers="$(mktemp "$STATE/headers.XXXXXXXX")"
-trap 'rm -f "$headers"' RETURN
+# Os headers sao descartados no retorno; o trap EXIT cuida do candidato.
 status="$(curl --silent --show-error --max-time 10 -o /dev/null -D "$headers" -w '%{http_code}' -X OPTIONS \
   http://127.0.0.1:3201/api/c4/client/signup \
   -H "Origin: $ORIGIN" -H "Access-Control-Request-Method: POST" \
