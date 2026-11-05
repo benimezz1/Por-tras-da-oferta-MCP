@@ -17,6 +17,9 @@ jobs:
         run: |
           for file in src/*.mjs; do node --check "$file"; done
       - name: Verificar sintaxe do deploy remoto
-        run: bash -n scripts/deploy-mcp-remote.sh
+        run: |
+          bash -n scripts/pto-deploy-systemd.sh
+          bash -n scripts/pto-ssh-gate.sh
+          bash -n scripts/bootstrap-pto-ssh.sh
       - name: Executar teste de integracao
         run: npm test

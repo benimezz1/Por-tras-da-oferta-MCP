@@ -25,19 +25,24 @@ npm start
 
 Abra `http://127.0.0.1:3100/`. O código de inscrição local é `demo-local` (somente quando não configurado um domínio público). Para testes locais, use apelidos fictícios e senhas de teste. A persistência fica em `data/runtime.json` (não é enviada ao GitHub).
 
-## Deploy automatico pelo GitHub (novo)
+## Deploy automatico real na EC2 (systemd)
 
-Pull requests executam os testes. Quando um PR e mesclado em `main` e a
-CI aprova o commit resultante, o workflow
-[Deploy MCP em producao](.github/workflows/deploy-mcp.yml) conecta por SSH ao
-host do Docker Compose, atualiza **somente `game-mcp`**, preserva os dados
-e verifica a resposta publica e o CORS do jogo. **O deploy nao ocorre no
-momento em que um PR e aberto**, para proteger a versao da apresentacao.
+O servidor de producao foi identificado em 05/11/2026: Ubuntu EC2,
+`por-tras-da-oferta.service`, usuario `pto-oferta`, porta
+`127.0.0.1:3201`, codigos em `/opt/por-tras-da-oferta/app` e
+configuracao privada em `/opt/por-tras-da-oferta/config/app.env`.
+**A producao nao usa Docker**; a configuracao Compose abaixo descreve
+apenas uma alternativa historica de instalacao.
 
-**Atencao:** e obrigatorio configurar uma vez o ambiente `production`,
-com secrets SSH e a variavel do caminho do servidor. Sem acesso ao
-servidor, o GitHub consegue testar mas nao implantar o MCP.
-[Guia completo de configuracao e verificacao](docs/DEPLOY-GITHUB.md).
+O [workflow de deploy](.github/workflows/deploy-mcp.yml) roda automaticamente
+apos merge + testes aprovados na `main`, usando SSH com chave restrita
+ao comando de deploy. Faz backup e rollback apenas de arquivos do MCP,
+reinicia somente `por-tras-da-oferta.service` e valida CORS do jogo.
+
+Antes da primeira publicacao, criar uma unica vez a conta SSH dedicada
+`pto-ghdeploy` e configurar os secrets no GitHub Environment `production`.
+**Nao entregar ao GitHub Actions a conta administrativa `ubuntu`.**
+Leia o [guia de configuracao na EC2](docs/DEPLOY-GITHUB.md).
 
 ## Publicação com Cloudflare Tunnel (Docker)
 

@@ -1,7 +1,6 @@
 name: Deploy MCP em producao
 
-# PR aberto = somente testes em test.yml.
-# Deploy = teste da main aprovado, apos merge (ou disparo manual na main).
+# PRs nao tem acesso a producao. Merge na main + CI aprovada dispara deploy.
 on:
   workflow_run:
     workflows: ["Testes do MCP"]
@@ -31,77 +30,78 @@ jobs:
     env:
       DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       DEPLOY_HOST: ${{ secrets.MCP_DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.MCP_DEPLOY_USER }}
+      DEPLOY_USER: pto-ghdeploy
       DEPLOY_KEY: ${{ secrets.MCP_DEPLOY_SSH_KEY }}
       DEPLOY_KNOWN_HOSTS: ${{ secrets.MCP_DEPLOY_KNOWN_HOSTS }}
-      DEPLOY_DIR: ${{ vars.MCP_DEPLOY_DIR }}
       DEPLOY_PORT: ${{ vars.MCP_DEPLOY_PORT || '22' }}
-      MCP_PUBLIC_ORIGIN: ${{ vars.MCP_PUBLIC_ORIGIN || 'https://mcp.portrasdaoferta.workers.dev' }}
+      MCP_PUBLIC_ORIGIN: https://mcp.portrasdaoferta.workers.dev
       C4_GAME_ORIGIN: https://jogo.portrasdaoferta.workers.dev
+
     steps:
-      - name: Obter codigo testado da main
+      - name: Baixar codigo aprovado
         uses: actions/checkout@v4
         with:
           ref: ${{ env.DEPLOY_SHA }}
           persist-credentials: false
 
-      - name: Validar configuracao e preparar SSH
+      - name: Conferir credenciais e preparar SSH restrito
         shell: bash
         run: |
           set -euo pipefail
-          for var in DEPLOY_HOST DEPLOY_USER DEPLOY_KEY DEPLOY_KNOWN_HOSTS DEPLOY_DIR; do
+          for var in DEPLOY_HOST DEPLOY_KEY DEPLOY_KNOWN_HOSTS; do
             if [[ -z "${!var}" ]]; then
-              echo "::error::Configure $var em Settings > Environments > production (secrets/variables)."
+              echo "::error::Falta $var no environment production."
               exit 1
             fi
           done
-          if [[ ! "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::Commit a implantar invalido."
-            exit 1
-          fi
-          if [[ ! "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ ]] || [[ ! "$DEPLOY_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_.-]*$ ]]; then
-            echo "::error::Host ou usuario SSH invalido."
+          if [[ ! "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || [[ ! "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+            echo "::error::SHA ou host SSH invalido."
             exit 1
           fi
           if [[ ! "$DEPLOY_PORT" =~ ^[0-9]+$ ]] || (( DEPLOY_PORT < 1 || DEPLOY_PORT > 65535 )); then
-            echo "::error::MCP_DEPLOY_PORT invalida."
-            exit 1
-          fi
-          if [[ ! "$DEPLOY_DIR" =~ ^/[a-zA-Z0-9._/-]+$ ]] || [[ "$DEPLOY_DIR" == *".."* ]] || [[ "$DEPLOY_DIR" == "/" ]]; then
-            echo "::error::MCP_DEPLOY_DIR precisa ser um caminho absoluto, sem espacos ou '..'."
-            exit 1
-          fi
-          if [[ ! "$MCP_PUBLIC_ORIGIN" =~ ^https://[a-zA-Z0-9.-]+(:[0-9]+)?$ ]]; then
-            echo "::error::MCP_PUBLIC_ORIGIN deve ser uma origem HTTPS, sem caminho."
+            echo "::error::Porta SSH invalida."
             exit 1
           fi
           install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/mcp_deploy"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/pto_deploy"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/mcp_deploy" "$HOME/.ssh/known_hosts"
-          bash -n scripts/deploy-mcp-remote.sh
+          chmod 600 "$HOME/.ssh/pto_deploy" "$HOME/.ssh/known_hosts"
+          ssh-keygen -y -f "$HOME/.ssh/pto_deploy" > /dev/null
+          lookup="$DEPLOY_HOST"
+          if [[ "$DEPLOY_PORT" != 22 ]]; then lookup="[$DEPLOY_HOST]:$DEPLOY_PORT"; fi
+          ssh-keygen -F "$lookup" -f "$HOME/.ssh/known_hosts" >/dev/null || {
+            echo "::error::Host nao encontrado no known_hosts verificado."
+            exit 1
+          }
+          for file in scripts/pto-ssh-gate.sh scripts/pto-deploy-systemd.sh scripts/bootstrap-pto-ssh.sh; do
+            bash -n "$file"
+          done
 
-      - name: Atualizar apenas o servico game-mcp no host
+      - name: Implantar SOMENTE o servico por-tras-da-oferta
         shell: bash
         run: |
           set -euo pipefail
-          printf -v remote_command 'bash -s -- %q %q' "$DEPLOY_SHA" "$DEPLOY_DIR"
-          ssh -i "$HOME/.ssh/mcp_deploy" \
+          result="$(mktemp)"
+          trap 'rm -f "$result"' EXIT
+          ssh -T -F /dev/null -i "$HOME/.ssh/pto_deploy" \
             -o IdentitiesOnly=yes \
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o "UserKnownHostsFile=$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=15 \
             -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "$remote_command" < scripts/deploy-mcp-remote.sh
+            "deploy $DEPLOY_SHA" | tee "$result"
+          grep -Fxq "DEPLOY_COMPLETE $DEPLOY_SHA" "$result" || {
+            echo "::error::Servico remoto nao confirmou o commit instalado."
+            exit 1
+          }
 
-      - name: Validar publicacao HTTPS e CORS do jogo
+      - name: Confirmar HTTPS e CORS reais no dominio publico
         shell: bash
         run: |
           set -euo pipefail
-          base="${MCP_PUBLIC_ORIGIN%/}"
+          base="$MCP_PUBLIC_ORIGIN"
           curl -fsS --retry 3 --retry-delay 2 --max-time 20 "$base/health" > /dev/null
-
           headers="$(mktemp)"
           trap 'rm -f "$headers"' EXIT
           status="$(curl -sS --max-time 20 -D "$headers" -o /dev/null -w '%{http_code}' \
@@ -114,15 +114,14 @@ jobs:
             cat "$headers"
             exit 1
           fi
-
           status="$(curl -sS --max-time 20 -D "$headers" -o /dev/null -w '%{http_code}' \
             "$base/api/c4/client/me" -H "Origin: $C4_GAME_ORIGIN")"
           if [[ "$status" != "401" ]] || ! tr -d '\r' < "$headers" | grep -Fiqx "Access-Control-Allow-Origin: $C4_GAME_ORIGIN"; then
-            echo "::error::A API C4 nao respondeu 401 com CORS autorizado (HTTP $status)."
+            echo "::error::API C4 sem CORS permitido (HTTP $status)."
             cat "$headers"
             exit 1
           fi
-          echo "MCP publicado e integrado ao jogo: /health OK; OPTIONS 204; /me 401 com CORS."
-          echo "### Deploy do MCP concluido" >> "$GITHUB_STEP_SUMMARY"
+          echo "### MCP publicado com sucesso" >> "$GITHUB_STEP_SUMMARY"
           echo "- Commit: \`$DEPLOY_SHA\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Health e CORS: aprovados" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Servico: por-tras-da-oferta.service (porta 3201)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- CORS signup OPTIONS 204 e /me 401: OK" >> "$GITHUB_STEP_SUMMARY"
