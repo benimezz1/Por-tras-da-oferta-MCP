@@ -60,10 +60,10 @@ test('MCP sem OAuth: senha somente no site, codigo por chat, isolamento por joga
     assert.equal(page.status,200);
     const pageHtml = await page.text();
     assert.doesNotMatch(pageHtml, /senha-super-forte-de-teste/);
-    assert.match(pageHtml, /mcp-theme\\.css/);
+    assert.ok(pageHtml.includes('mcp-theme.css'));
     assert.match(pageHtml, /class="feed-showcase"/);
-    assert.match(pageHtml, /assets\\/social\\/unique\\/avatar-livia\\.jpg/);
-    assert.match(pageHtml, /action="\\/vincular\\/entrar"/);
+    assert.ok(pageHtml.includes('assets/social/unique/avatar-livia.jpg'));
+    assert.ok(pageHtml.includes('action="/vincular/entrar"'));
     assert.match(pageHtml, /name="pedido"/);
     assert.match(pageHtml, /name="password"/);
     const form = async(password) => fetch(base+'/vincular/entrar',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({pedido,username,password})});
@@ -72,7 +72,7 @@ test('MCP sem OAuth: senha somente no site, codigo por chat, isolamento por joga
     const right=await form('senha-super-forte-de-teste');
     assert.equal(right.status,200,await right.clone().text());
     const html=await right.text();
-    assert.match(html, /mcp-theme\\.css/);
+    assert.ok(html.includes('mcp-theme.css'));
     assert.match(html, /class="code-pill"/);
     const code=html.match(/[0-9A-F]{12}/)?.[0];
     assert.ok(code,'Codigo exibido somente no site');
