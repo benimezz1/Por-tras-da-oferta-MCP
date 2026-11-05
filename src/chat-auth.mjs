@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { read, update, newToken } from './storage.mjs';
 import { ORIGIN, verifyCredentials } from './auth.mjs';
+import { brandedPage } from './ui-pages.mjs';
 
 // Anonymous MCP discovery, but never anonymous access to player data.
 // Each conversation needs an independently authenticated, short-lived bearer
@@ -45,12 +46,46 @@ export async function linkPageInfo(id) {
 }
 
 export function linkPage(id, username, error = '') {
-  const message = error ? `<p role="alert" style="color:#b91c1c">${esc(error)}</p>` : '';
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Confirmar acesso - Por Tras da Oferta</title></head><body style="background:#111827;color:#f9fafb;font:16px system-ui;max-width:440px;margin:7vh auto;padding:24px"><main style="background:#1f2937;border-radius:18px;padding:26px"><h1>Por Tras da Oferta</h1><p>Confirme sua identidade para acessar somente seu progresso ficticio nesta conversa.</p>${message}<form method="post" action="/vincular/entrar"><input type="hidden" name="pedido" value="${esc(id)}"><label style="display:block;margin:16px 0">Apelido<input name="username" autocomplete="username" value="${esc(username)}" maxlength="24" required style="box-sizing:border-box;width:100%;padding:12px;margin-top:7px"></label><label style="display:block;margin:16px 0">Senha do jogo<input name="password" type="password" autocomplete="current-password" maxlength="128" required style="box-sizing:border-box;width:100%;padding:12px;margin-top:7px"></label><button style="padding:13px 18px;background:#9fe3d0;border:0;border-radius:8px;font-weight:bold">Confirmar identidade</button></form><p style="font-size:13px;color:#d1d5db">Nao informe sua senha no ChatGPT. O codigo de confirmacao sera exibido nesta pagina e so funciona por poucos minutos.</p></main></body></html>`;
+  const message = error ? `<p class="alert" role="alert">${esc(error)}</p>` : '';
+  const card = `
+    <div class="brandline"><span class="brand-symbol">↗</span> POR TRÁS DA OFERTA · MCP</div>
+    <h2>Confirme sua identidade.</h2>
+    <p class="account-intro">Para conectar seu percurso fictício ao ChatGPT, entre com a mesma conta utilizada no jogo.</p>
+    <p class="user-bubble">Conta solicitada: ${esc(username)}</p>
+    ${message}
+    <form method="post" action="/vincular/entrar">
+      <input type="hidden" name="pedido" value="${esc(id)}">
+      <label for="vincular-username">Nome de usuário</label>
+      <input id="vincular-username" name="username" autocomplete="username" value="${esc(username)}" minlength="3" maxlength="24" pattern="[A-Za-z0-9_.-]+" required>
+      <label for="vincular-password">Senha do jogo</label>
+      <input id="vincular-password" name="password" type="password" autocomplete="current-password" minlength="10" maxlength="128" placeholder="Sua senha do jogo" required>
+      <div class="actions"><button class="primary" type="submit">Confirmar identidade →</button></div>
+    </form>
+    <div class="account-privacy"><strong>Seus dados continuam protegidos.</strong>
+      <p>A senha é verificada somente no servidor. O código mostrado a seguir dura poucos minutos e pode ser usado apenas uma vez. Nunca digite sua senha no ChatGPT.</p>
+    </div>`;
+  return brandedPage({
+    pageTitle: 'Vincular conta ao ChatGPT',
+    headline: 'Seu feed.', highlight: 'Sua conta.',
+    description: 'Um jogo, muitas escolhas. Conecte seu perfil para consultar apenas os resultados da sua simulação.',
+    tag: 'VÍNCULO SEGURO · CHATGPT', card
+  });
 }
 
 export function linkCodePage(code) {
-  return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Codigo temporario - Por Tras da Oferta</title><body style="background:#111827;color:white;font:16px system-ui;max-width:440px;margin:7vh auto;padding:24px"><main style="background:#1f2937;border-radius:18px;padding:26px"><h1>Identidade confirmada!</h1><p>Volte para a mesma conversa e informe apenas este codigo temporario:</p><p style="font:700 30px monospace;letter-spacing:.12em;padding:18px;background:#374151;text-align:center;border-radius:10px">${esc(code)}</p><p>O codigo expira em poucos minutos e pode ser usado uma unica vez. Nunca compartilhe sua senha no chat.</p></main></body></html>`;
+  const card = `
+    <div class="brandline"><span class="brand-symbol">✓</span> POR TRÁS DA OFERTA · MCP</div>
+    <h2>Identidade confirmada!</h2>
+    <p class="account-intro">Volte para a mesma conversa no ChatGPT e informe somente o código abaixo para concluir o vínculo.</p>
+    <div class="code-pill" aria-label="Código temporário de vinculação">${esc(code)}</div>
+    <p class="code-help">O código é temporário e funciona uma única vez. Não compartilhe a sua senha. Depois do vínculo, o ChatGPT poderá analisar o percurso da conta autorizada.</p>
+    <div class="account-privacy"><strong>Conta autorizada com segurança</strong><p>O código confirma a identidade; ele não é sua senha e não concede acesso permanente ao projeto.</p></div>`;
+  return brandedPage({
+    pageTitle: 'Código de confirmação do ChatGPT',
+    headline: 'Conexão', highlight: 'confirmada.',
+    description: 'Seu perfil está pronto para ser vinculado à conversa escolhida.',
+    tag: 'CONFIRMAÇÃO · CONTA INDIVIDUAL', card
+  });
 }
 
 export async function verifyChatLink(id, username, password) {
