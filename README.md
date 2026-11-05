@@ -25,6 +25,20 @@ npm start
 
 Abra `http://127.0.0.1:3100/`. O código de inscrição local é `demo-local` (somente quando não configurado um domínio público). Para testes locais, use apelidos fictícios e senhas de teste. A persistência fica em `data/runtime.json` (não é enviada ao GitHub).
 
+## Deploy automatico pelo GitHub (novo)
+
+Pull requests executam os testes. Quando um PR e mesclado em `main` e a
+CI aprova o commit resultante, o workflow
+[Deploy MCP em producao](.github/workflows/deploy-mcp.yml) conecta por SSH ao
+host do Docker Compose, atualiza **somente `game-mcp`**, preserva os dados
+e verifica a resposta publica e o CORS do jogo. **O deploy nao ocorre no
+momento em que um PR e aberto**, para proteger a versao da apresentacao.
+
+**Atencao:** e obrigatorio configurar uma vez o ambiente `production`,
+com secrets SSH e a variavel do caminho do servidor. Sem acesso ao
+servidor, o GitHub consegue testar mas nao implantar o MCP.
+[Guia completo de configuracao e verificacao](docs/DEPLOY-GITHUB.md).
+
 ## Publicação com Cloudflare Tunnel (Docker)
 
 ### Preparar no servidor
