@@ -57,6 +57,38 @@ test('valida, isola e resume a semana C4 sem confiar em resumo do cliente', () =
   assert.equal(summarizeC4(a,getC4(db,a).document).participante.apelido,'jogadorA');
 });
 
+test('aceita feed integral de cinco dias e rejeita excesso sem perder dados', () => {
+  const doc = payload('c4-semana-completa-123456');
+  // 35 posts/anuncios + 25 eventos de roteiro + 5 marcadores noturnos.
+  doc.estado.feedItems = [
+    ...Array.from({ length: 35 }, (_, i) => ({
+      kind: i % 4 === 0 ? 'ad' : 'post', id: 'post-' + i,
+      day: Math.floor(i / 7) + 1
+    })),
+    ...Array.from({ length: 25 }, (_, i) => ({
+      kind: 'event', id: 'ev-' + i, day: Math.floor(i / 5) + 1
+    })),
+    ...Array.from({ length: 5 }, (_, i) => ({
+      kind: 'night', id: 'night-' + (i + 1), day: i + 1
+    }))
+  ];
+  const db = {};
+  const user = {id: 'aluno-c4-65', username: 'aluno_feed'};
+  const imported = importC4(db, user, doc);
+  assert.equal(imported.importado, true);
+  assert.equal(imported.resumo.experiencia.conteudosExibidos, 65);
+  assert.equal(imported.resumo.experiencia.eventosDeRoteiro, 30);
+  assert.equal(getC4(db, user).document.estado.feedItems.length, 65);
+
+  const extra = structuredClone(doc);
+  extra.estado.feedItems.push({kind: 'event', id: 'ev-extra', day: 5});
+  assert.throws(() => importC4({}, user, extra), /feedItems/);
+
+  const absent = structuredClone(doc);
+  delete absent.estado.feedItems;
+  assert.throws(() => importC4({}, user, absent), /feedItems/);
+});
+
 test('API: importação exige login, rejeita origem externa e separa contas', {timeout:22000}, async t => {
   const port=36500+Math.floor(Math.random()*1800);
   const base='http://127.0.0.1:'+port;
