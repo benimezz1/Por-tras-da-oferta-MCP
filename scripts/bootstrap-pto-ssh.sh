@@ -13,7 +13,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f /opt/por-tras-da-oferta/config/app.env ]] || { echo "Config privada ausente; abortando." >&2; exit 2; }
 systemctl is-active --quiet por-tras-da-oferta.service || { echo "MCP nao esta ativo; abortando." >&2; exit 2; }
 command -v visudo >/dev/null || { echo "visudo nao encontrado; abortando." >&2; exit 2; }
-bash -n "$script_dir/pto-deploy-systemd.sh" "$script_dir/pto-ssh-gate.sh"
+for file in "$script_dir/pto-deploy-systemd.sh" "$script_dir/pto-ssh-gate.sh"; do bash -n "$file"; done
 
 public_line="$(head -n 1 "$1")"
 if [[ ! "$public_line" =~ ^ssh-ed25519[[:space:]]+[A-Za-z0-9+/=]+([[:space:]].*)?$ ]]; then
