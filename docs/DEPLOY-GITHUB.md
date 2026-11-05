@@ -1,127 +1,160 @@
-# Deploy automático do MCP pelo GitHub Actions
+# Deploy automático do MCP — AWS EC2, systemd, porta 3201
 
-A partir desta configuração, **cada pull request executa os testes** da
-[CI](../.github/workflows/test.yml). **Quando o PR é mesclado em `main` e a
-CI da `main` conclui com sucesso**, o
-[workflow de deploy](../.github/workflows/deploy-mcp.yml) inicia a publicação.
-Há também um botão **Run workflow** para redeploy manual da `main`.
+**Este é o procedimento real do servidor**, confirmado por diagnóstico de
+05/11/2026. O projeto NÃO usa Docker no host de produção.
+A EC2 hospeda múltiplos serviços (YoLiga, YoLiga MCP, YoLiga Social Studio,
+Por Trás da Oferta). O deploy abaixo toca **exclusivamente**
+`por-tras-da-oferta.service`, no loopback `127.0.0.1:3201`.
 
-**Não implantar PRs abertos diretamente em produção.** Um PR pode conter
-código ainda não revisado. O deploy ocorre somente depois do merge e dos
-testes aprovados.
+- Serviço: `por-tras-da-oferta.service`
+- Usuário do aplicativo: `pto-oferta`
+- Arquivos executáveis: `/opt/por-tras-da-oferta/app`
+- Configuração protegida: `/opt/por-tras-da-oferta/config/app.env`
+- Repositório de staging legado: `/home/ubuntu/por-tras-da-oferta-stage`
+  (NÃO será alterado automaticamente)
+- Conta SSH do GitHub Actions: `pto-ghdeploy` (sem sudo genérico)
+- Código fonte atualizado: `https://github.com/benimezz1/Por-tras-da-oferta-MCP`
 
-## Como este projeto é publicado
+## Fluxo de publicação
 
-O MCP é um servidor Node.js com dados persistidos no volume Docker
-`participant_data`; não é um site estático e **não é publicado executando
-`wrangler deploy`**. O Cloudflare encaminha as solicitações ao servidor
-pelo túnel já existente. Por isso, GitHub Actions precisa de uma conexão
-segura com o host que já executa o `docker compose`.
+1. PR aberto: apenas testes (sem segredo de produção).
+2. PR mesclado em `main`: CI da main executa novamente.
+3. CI aprovada: `Deploy MCP em producao` envia `deploy <SHA40>` por SSH.
+4. Uma chave SSH **restrita** admite somente esse comando.
+5. O instalador root, fixo em `/usr/local/sbin/pto-deploy-systemd`,
+   valida se o SHA é exatamente a última `main`, executa testes de
+   integração na própria EC2 como `pto-oferta`, faz backup de
+   `src`, `public` e `package.json` do MCP.
+6. Substitui somente esses três alvos, reinicia **apenas**
+   `por-tras-da-oferta.service`, confirma `/health` e CORS local.
+7. Se falhar, restaura os três alvos do backup e reinicia só o MCP.
+8. O runner do GitHub verifica `/health`, preflight HTTPS de
+   `/api/c4/client/signup` (204) e `/api/c4/client/me` sem
+   autenticação (401), ambos com CORS da origem do jogo.
 
-O workflow envia comandos **somente por SSH**, usa o commit efetivamente
-aprovado e atualiza apenas:
+O instalador não limpa `data`, não toca em `config/app.env`,
+não altera as unidades YoLiga e não reinicia a máquina ou o tunnel.
+O comando de deploy não concede acesso a shell remoto ao GitHub.
 
-```sh
-docker compose up -d --no-deps --build --force-recreate game-mcp
+## Configurar a EC2 UMA VEZ
+
+Faça login pelo seu método normal na EC2 e execute como `ubuntu`.
+Se a chave ainda não existir, crie uma dedicada:
+
+```bash
+umask 077
+mkdir -p /home/ubuntu/.ssh
+KEY=/home/ubuntu/.ssh/pto-ghdeploy-actions
+if [ ! -f "$KEY" ]; then
+  ssh-keygen -q -t ed25519 -N "" -f "$KEY" -C "github-actions-pto-mcp"
+fi
+git clone --depth=1 https://github.com/benimezz1/Por-tras-da-oferta-MCP.git /home/ubuntu/pto-mcp-deploy-setup
+sudo bash /home/ubuntu/pto-mcp-deploy-setup/scripts/bootstrap-pto-ssh.sh "$KEY.pub"
 ```
 
-Não executa `docker compose down`, não recria `cloudflared`, não apaga
-volumes, nem envia o arquivo `.env` ao GitHub. O script exige que a branch
-local seja `main`, que não existam alterações rastreadas, que `.env`
-esteja presente e que o commit aprovado ainda seja o último da `main`.
+Se `/home/ubuntu/pto-mcp-deploy-setup` já for um clone, use
+`git -C /home/ubuntu/pto-mcp-deploy-setup pull --ff-only`
+em vez de clonar novamente.
 
-## Configuração inicial (necessária uma única vez)
+O bootstrap valida a instalação systemd e cria apenas:
+- usuário de deploy `pto-ghdeploy`, home `/var/lib/pto-ghdeploy`;
+- chave autorizada com `restrict,command="/usr/local/bin/pto-ssh-gate"`;
+- `/usr/local/bin/pto-ssh-gate` de propriedade root;
+- `/usr/local/sbin/pto-deploy-systemd` de propriedade root;
+- `/etc/sudoers.d/pto-ghdeploy` com autorização só para executar
+  `/usr/local/sbin/pto-deploy-systemd`, **sem argumentos**.
 
-**1. Preparar o host do MCP.** No servidor que já tem o MCP implantado,
-confirme via acesso administrativo que existe um clone do repositório
-`benimezz1/Por-tras-da-oferta-MCP` na branch `main`, com `.env`,
-Docker Compose e as credenciais atuais do Cloudflare Tunnel. **Não
-recrie o volume nem o túnel.** O usuário de deploy deve ter permissão
-para operar Docker e acesso de leitura/gravação ao clone. Use uma conta
-dedicada e proteja seu acesso; o grupo Docker equivale a privilégios
-elevados no host.
+Não executa deploy na preparação e não altera nenhum serviço.
 
-**2. Configurar a chave SSH dedicada.** Crie uma chave específica para o
-GitHub Actions. Coloque **apenas a chave pública** no
-`~/.ssh/authorized_keys` da conta de deploy do host. A chave privada
-deve ser inserida diretamente como secret do GitHub, nunca em arquivo
-versionado, chat, comentário de PR ou histórico de comandos. Obtenha
-e confirme a chave pública do host SSH por um canal confiável para
-preencher `MCP_DEPLOY_KNOWN_HOSTS`; não aceite cegamente a identidade
-de um host desconhecido. O SSH do host deve ser alcançável a partir do
-GitHub Actions por uma rota autorizada. **O túnel HTTP do MCP não
-implica que haja acesso SSH.** Se o host é acessível apenas em rede
-privada, será necessário viabilizar um caminho seguro ou adaptar o
-deploy a um runner dedicado dentro dessa rede.
+## Configurar GitHub Environment production
 
-**3. No repositório GitHub:**
-[Settings → Environments](https://github.com/benimezz1/Por-tras-da-oferta-MCP/settings/environments)
-→ criar o ambiente `production`. Opcionalmente configure revisores
-obrigatórios. Adicione os seguintes valores **no ambiente production**:
+Em [Settings → Environments](https://github.com/benimezz1/Por-tras-da-oferta-MCP/settings/environments)
+crie/abra `production`. Adicione:
 
-| Tipo | Nome | Valor |
+| Tipo | Nome | Conteúdo |
 |---|---|---|
-| Secret | `MCP_DEPLOY_HOST` | Hostname/IP do servidor SSH (não é a URL do MCP) |
-| Secret | `MCP_DEPLOY_USER` | Usuário SSH de deploy |
-| Secret | `MCP_DEPLOY_SSH_KEY` | Chave privada SSH dedicada |
-| Secret | `MCP_DEPLOY_KNOWN_HOSTS` | Linha `known_hosts` do host **verificada** |
-| Variable | `MCP_DEPLOY_DIR` | Caminho **absoluto** do clone no host, sem espaços, por exemplo `/srv/por-tras-da-oferta-mcp` somente se for o caminho real |
-| Variable | `MCP_DEPLOY_PORT` | Porta SSH (opcional, padrão 22) |
-| Variable | `MCP_PUBLIC_ORIGIN` | `https://mcp.portrasdaoferta.workers.dev` (opcional, padrão esse endereço) |
+| Secret | `MCP_DEPLOY_HOST` | Endereço **público SSH** da EC2 obtido na AWS, não `ip-172-31-5-211` nem domínio `workers.dev` |
+| Secret | `MCP_DEPLOY_SSH_KEY` | Conteúdo integral do arquivo privado `/home/ubuntu/.ssh/pto-ghdeploy-actions` |
+| Secret | `MCP_DEPLOY_KNOWN_HOSTS` | Uma linha `HOST ssh-ed25519 BASE64...` com a chave de HOST verificada da EC2 |
+| Variable (opcional) | `MCP_DEPLOY_PORT` | `22` por padrão |
 
-Não há como criar essas credenciais automaticamente a partir do conteúdo
-público do GitHub. Se faltarem, o deploy **falhará claramente** na etapa
-de verificação; não declarará uma publicação fictícia.
+`MCP_DEPLOY_USER=pto-ghdeploy` é fixo no workflow. Não existem mais
+`MCP_DEPLOY_DIR` nem `MCP_DEPLOY_USER` para configurar.
 
-**4. Conferir `.env` no servidor, não no GitHub.** Os valores esperados são:
+### Como obter uma linha known_hosts autenticada
 
-```dotenv
-PUBLIC_BASE_URL=https://mcp.portrasdaoferta.workers.dev
-C4_GAME_ORIGIN=https://jogo.portrasdaoferta.workers.dev
-C4_SIGNUP_ENABLED=true
+Na EC2, o fingerprint ED25519 do host já foi confirmado no diagnóstico:
+
+`SHA256:CiQ7xBfFwW3FJDXT8v+Lf4z/QAL2j0U7UJS07z3tau4`
+
+No painel da AWS, obtenha o **Public IPv4 address** da mesma instância.
+Esse IP é o **HOST** no secret. Digite o IP no comando abaixo somente no
+terminal da EC2, sem compartilhar chaves privadas:
+
+```bash
+read -rp 'IP publico da EC2 (AWS Console): ' MCP_SSH_PUBLIC_IP
+printf '%s %s\n' "$MCP_SSH_PUBLIC_IP" "$(sudo awk '{print $1" "$2}' /etc/ssh/ssh_host_ed25519_key.pub)"
 ```
 
-Preserve também o `REGISTRATION_CODE`, `TUNNEL_TOKEN` e outros
-segredos existentes. Confira se a origem está sem barra final e se
-`PUBLIC_BASE_URL` corresponde ao domínio público real. O workflow
-não escreve no `.env`.
+A saída é a linha `known_hosts` a ser colada no secret do GitHub.
+Confirme o fingerprint pelo comando
+`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`.
+Não use `StrictHostKeyChecking=no` nem aceite `ssh-keyscan` sem
+comparar o fingerprint.
 
-## Verificações automáticas depois de cada deploy
+Para obter **somente a chave privada** e colá-la diretamente no campo
+`MCP_DEPLOY_SSH_KEY` do GitHub, na EC2:
 
-O job só apresenta **sucesso** se passar em:
+```bash
+cat /home/ubuntu/.ssh/pto-ghdeploy-actions
+```
 
-1. `GET /health` no contêiner local do servidor;
-2. `C4_GAME_ORIGIN` correto no contêiner;
-3. `GET https://mcp.portrasdaoferta.workers.dev/health` por HTTPS;
-4. `OPTIONS /api/c4/client/signup` a partir da origem do jogo:
-   HTTP **204** com `Access-Control-Allow-Origin` correto;
-5. `GET /api/c4/client/me` sem token: HTTP **401**, também com CORS
-   correto. O `401` nesse caso é **esperado**.
+O conteúdo desse arquivo é segredo: **NUNCA cole aqui no ChatGPT,
+em logs, em issues, PRs ou no repositório**. Não compartilhe por e-mail
+ou screenshots. Depois de instalar o secret e validar o workflow,
+remova a chave privada temporária da EC2, caso não precise dela
+para rotação. A chave pública permanece autorizada.
 
-Os testes de CORS detectam diretamente o bloqueio visto no navegador
-após a atualização do jogo. **Nenhuma conta é criada pelos testes de deploy.**
+## Primeira publicação
 
-## Operação e manutenção
+Após configurar os secrets:
+[Actions → Deploy MCP em producao](https://github.com/benimezz1/Por-tras-da-oferta-MCP/actions/workflows/deploy-mcp.yml)
+→ **Run workflow** → branch `main`.
 
-- **PR aberto:** a CI valida, mas **não publica**.
-- **PR mesclado à main:** a CI roda novamente no commit mesclado;
-  em caso de sucesso, o deploy se inicia.
-- **CI falhou:** não publica.
-- **Deploy falhou:** verifique a etapa específica na aba
-  [Actions](https://github.com/benimezz1/Por-tras-da-oferta-MCP/actions)
-  antes de tentar novamente. O job retorna falha se servidor/credenciais
-  estiverem ausentes, ou se CORS e API pública estiverem incorretos.
-- **Redeploy manual:** Actions → `Deploy MCP em producao` →
-  **Run workflow** → branch `main`.
-- **Rollback:** antes de reverter, inspecione os logs do contêiner e
-  registre o SHA anterior mostrado no job. Reverter somente o código do
-  `game-mcp` e nunca apagar `participant_data`. Para recuperação
-  urgente, use a cópia/commit conhecido do servidor via acesso
-  administrativo; não faça rollback por exclusão de volumes.
-- **Mudança no Cloudflare Worker ou túnel:** não é abrangida por este
-  workflow. Encaminhamento de URL, regras de Cloudflare e permissões da
-  máquina continuam sendo configurados no respectivo serviço.
+Para essa execução, não use outro serviço, não execute `docker compose`
+e não rode `systemctl restart` fora do script de deploy.
 
-**Situação inicial:** workflow implementado no repositório, mas o
-deploy só ocorrerá depois que o host SSH, a chave, a impressão do host
-e o caminho do projeto forem configurados no ambiente `production`.
+**Rede SSH:** o runner GitHub precisa conseguir abrir a porta 22 da EC2.
+Um túnel HTTPS para o MCP não permite SSH. Não exponha a porta 22
+publicamente sem controles; se o Security Group estiver restrito,
+adapte a rede ou use um runner privado/Cloudflare Access SSH.
+O acesso usado pelo projeto YoLiga-MCP pode servir como referência
+de conectividade, mas o par de chaves do PTO é separado.
+
+## Cuidados com Node 20
+
+A sessão de `ubuntu` reportou Node `20.20.2`; o repositório
+declara `>=22`. O instalador testa o candidato com o Node disponível
+na EC2 **antes** de substituir arquivos de produção. Se os testes
+falharem, a publicação é abortada. É recomendável disponibilizar
+Node 22 **somente para este serviço** no futuro, sem atualizar o
+Node global usado pelos outros projetos. Não mude o runtime de outros
+serviços ao configurar o deploy inicial.
+
+## Solução de problemas
+
+- Sem acesso SSH: confira o hostname/IP público, Security Group,
+  fingerprint e o segredo da chave; não use IP privado `172.31.x.x`.
+- Chave inválida: GitHub aceita o arquivo privado completo, incluindo
+  `BEGIN OPENSSH PRIVATE KEY` e `END OPENSSH PRIVATE KEY`.
+- `ExecStart` inesperado: o deploy aborta antes de modificar produção;
+  confira `systemctl show por-tras-da-oferta.service -p ExecStart`.
+- Testes falharam com Node 20: instale Node 22 isoladamente, não globalmente.
+- HTTP OPTIONS 401: a versão instalada ainda é antiga ou o CORS
+  não foi liberado; o script deve restaurar a versão anterior
+  se a candidata não sanar isso.
+- Deploy falhou depois de copiar arquivos: o instalador tenta rollback
+  automático apenas da aplicação PTO, com backup em
+  `/opt/por-tras-da-oferta/.github-deploy/backups/`.
+- Dados de jogadores: não remova `app/data` nem o `DATA_FILE`
+  indicado em `config/app.env` e não compartilhe seu conteúdo.
