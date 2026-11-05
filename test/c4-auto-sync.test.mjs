@@ -40,6 +40,20 @@ test("login simples, envio automatico, identidade e CORS da Semana C4", {timeout
  t.after(async()=>{child.kill();await rm(temp,{recursive:true,force:true});});
  let up=false;for(let i=0;i<55;i++){try{if((await fetch(base+"/health")).ok){up=true;break;}}catch{}await delay(90);}
  assert.ok(up,"API iniciou");
+ // Telas MCP servidas no mesmo dominio e com o mesmo tema, sem depender do Worker.
+ const root = await fetch(base + "/");
+ assert.equal(root.status, 200);
+ const rootHtml = await root.text();
+ assert.ok(rootHtml.includes('id="login"'));
+ assert.ok(rootHtml.includes('id="register"'));
+ assert.ok(rootHtml.includes('mcp-theme.css'));
+ assert.ok(rootHtml.includes('class="feed-showcase"'));
+ const theme = await fetch(base + "/mcp-theme.css");
+ assert.equal(theme.status, 200);
+ assert.ok((theme.headers.get("content-type") || "").includes("text/css"));
+ const css = await theme.text();
+ assert.ok(css.includes(".account-card"));
+ assert.ok(css.includes(".story-ring"));
  const json=async(path,data,token,origin=C4_ORIGIN)=>{
   const res=await fetch(base+path,{method:"POST",headers:{"Content-Type":"application/json",Origin:origin,
    ...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify(data)});

@@ -6,6 +6,7 @@ import { SCENARIOS, summarize, recordChoice } from './scenarios.mjs';
 import { CHAVES_ESTRATEGIAS } from './conhecimento.mjs';
 import { analisarTextoAnuncio } from './anuncios.mjs';
 import { handleMcp } from './mcp.mjs';
+import { brandedPage } from './ui-pages.mjs';
 import { importC4, getC4, summarizeC4, C4_MAX_BYTES } from './c4-import.mjs';
 import { GAME_ORIGIN, createPlayer, loginPlayer, identifyPlayer, revokePlayer } from './c4-client-auth.mjs';
 import { CHAT_LOGIN_ENABLED, linkPageInfo, linkPage, linkCodePage, verifyChatLink } from './chat-auth.mjs';
@@ -13,6 +14,7 @@ const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3100);
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw Error('Porta inválida');
 const html = new URL('../public/index.html', import.meta.url);
+const themeCss = new URL('../public/mcp-theme.css', import.meta.url);
 const limitMap = new Map();
 const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 function send(res, status, obj, headers = {}) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers }); res.end(JSON.stringify(obj)); }
@@ -29,8 +31,67 @@ function throttle(req, kind, max = 15) {
   if (limitMap.size > 10000) limitMap.clear();
 }
 const privateUser = user => ({ id: user.id, username: user.username });
-function loginPage() { return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Conectar conta do jogo</title><body style="font:17px system-ui;max-width:500px;margin:70px auto;padding:20px"><h1>Por Trás da Oferta</h1><p>Faça login com a mesma conta do jogo para autorizar a conexão do assistente.</p><form id="login"><input name="username" autocomplete="username" placeholder="Apelido" required style="padding:12px"><input name="password" type="password" autocomplete="current-password" placeholder="Senha" required style="padding:12px"><button>Entrar</button></form><p id="status"></p><script>document.getElementById('login').onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});if(r.ok)location.reload();else document.getElementById('status').textContent=(await r.json()).erro||'Falha no login';};</script></body></html>`; }
-function consentPage(ctx) { return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Autorizar conexão</title><body style="font:17px system-ui;max-width:550px;margin:70px auto;padding:20px"><h1>Conectar ao Por Trás da Oferta</h1><p><b>${escape(ctx.clientName)}</b> está solicitando acesso educativo à conta <b>${escape(ctx.username)}</b>.</p><p>Permissões: <code>${escape(ctx.scopes.join(', '))}</code>. A IA poderá consultar o progresso fictício e analisar anúncios. Ela não poderá alterar o jogo.</p><form method="post" action="/oauth/consent"><input type="hidden" name="pendingId" value="${escape(ctx.id)}"><input type="hidden" name="csrf" value="${escape(ctx.csrf)}"><button name="approve" value="yes">Autorizar</button> <button name="approve" value="no">Recusar</button></form></body></html>`; }
+function loginPage() {
+  const card = `
+    <div class="brandline"><span class="brand-symbol">↗</span> POR TRÁS DA OFERTA · MCP</div>
+    <h2>Entre com seu perfil.</h2>
+    <p class="account-intro">Use o mesmo apelido e senha da conta do jogo para continuar a autorização do assistente.</p>
+    <form id="login">
+      <label for="oauth-username">Nome de usuário</label>
+      <input id="oauth-username" name="username" autocomplete="username" placeholder="Seu apelido do jogo" minlength="3" maxlength="24" required>
+      <label for="oauth-password">Senha do jogo</label>
+      <input id="oauth-password" name="password" type="password" autocomplete="current-password" placeholder="Sua senha" minlength="10" maxlength="128" required>
+      <div class="actions"><button class="primary" type="submit">Entrar e continuar →</button></div>
+    </form>
+    <p id="status" class="account-status" role="status" aria-live="polite"></p>
+    <div class="account-privacy"><strong>Senha só no site seguro</strong><p>Nunca informe sua senha diretamente ao ChatGPT. Ela é usada apenas para autenticar sua conta no servidor.</p></div>
+    <script>
+      document.getElementById('login').onsubmit = async event => {
+        event.preventDefault();
+        const status = document.getElementById('status');
+        status.textContent = 'Conectando sua conta…';
+        const data = Object.fromEntries(new FormData(event.target));
+        try {
+          const response = await fetch('/api/login', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+          });
+          if (response.ok) {location.reload();return;}
+          const result = await response.json().catch(()=>({}));
+          status.textContent = result.erro || 'Não foi possível entrar. Confira seus dados.';
+        } catch {
+          status.textContent = 'Sem conexão com o servidor. Tente novamente.';
+        }
+      };
+    </script>`;
+  return brandedPage({
+    pageTitle: 'Entrar para autorizar o ChatGPT',
+    headline: 'Seu feed.', highlight: 'Sua conta.',
+    description: 'Entre com as credenciais do seu jogo para autorizar a leitura do seu percurso fictício.',
+    tag: 'LOGIN SEGURO · CONEXÃO CHATGPT', card
+  });
+}
+function consentPage(ctx) {
+  const card = `
+    <div class="brandline"><span class="brand-symbol">↗</span> POR TRÁS DA OFERTA · MCP</div>
+    <h2>Autorizar conexão?</h2>
+    <p class="account-intro"><strong>${escape(ctx.clientName)}</strong> deseja consultar o percurso da conta <strong>${escape(ctx.username)}</strong>.</p>
+    <p class="user-bubble">Conta: ${escape(ctx.username)}</p>
+    <div class="account-privacy"><strong>O que será compartilhado?</strong><p>Leitura do progresso fictício e análise de anúncios. Permissões: <code>${escape(ctx.scopes.join(', '))}</code>. O assistente não poderá mudar suas decisões no jogo.</p></div>
+    <form method="post" action="/oauth/consent">
+      <input type="hidden" name="pendingId" value="${escape(ctx.id)}">
+      <input type="hidden" name="csrf" value="${escape(ctx.csrf)}">
+      <div class="consent-actions actions"><button class="primary" name="approve" value="yes" type="submit">Autorizar leitura</button><button class="secondary" name="approve" value="no" type="submit">Recusar</button></div>
+    </form>`;
+  return brandedPage({
+    pageTitle: 'Autorizar acesso ao ChatGPT',
+    headline: 'Escolhas suas.', highlight: 'Acesso seu.',
+    description: 'Decida se o assistente pode consultar o histórico fictício que você registrou no jogo.',
+    tag: 'VOCÊ CONTROLA OS DADOS · OAUTH', card
+  });
+}
 const isC4Client = path => path.pathname.startsWith('/api/c4/client/');
 const corsOriginAllowed = (req,path) => !req.headers.origin || req.headers.origin === ORIGIN ||
   (isC4Client(path) && req.headers.origin === GAME_ORIGIN);
@@ -53,6 +114,7 @@ const server = createServer(async (req, res) => {
       res.writeHead(204, {'Cache-Control':'no-store'});return res.end();
     }
     if (needsOrigin(req) && !corsOriginAllowed(req,path)) return send(res, 403, { erro: 'Origin não autorizado.' });
+    if (req.method === 'GET' && path.pathname === '/mcp-theme.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(await readFile(themeCss)); }
     if (req.method === 'GET' && path.pathname === '/') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(await readFile(html)); }
     if (req.method === 'GET' && path.pathname === '/health') return send(res, 200, { status: 'ok', projeto: 'por-tras-da-oferta', mcp: '/mcp' });
     if (req.method === 'GET' && ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'].includes(path.pathname)) return send(res, 200, metadata('resource'));
