@@ -63,10 +63,26 @@ jobs:
             exit 1
           fi
           install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/pto_deploy"
+
+          # Secrets de varias linhas sao facilmente corrompidos em copiar/colar.
+          # A forma recomendada e um unico valor base64 da chave PRIVADA.
+          # Para retrocompatibilidade, uma chave PEM/OpenSSH multiline valida
+          # continua sendo aceita.
+          key_file="$HOME/.ssh/pto_deploy"
+          if [[ "$DEPLOY_KEY" == -----BEGIN* ]]; then
+            printf '%s\n' "$DEPLOY_KEY" | sed 's/\r$//' > "$key_file"
+          else
+            if ! printf '%s' "$DEPLOY_KEY" | base64 --decode > "$key_file" 2>/dev/null; then
+              echo "::error::Chave SSH invalida: secret deve conter base64 da chave privada (base64 -w 0 arquivo)."
+              exit 1
+            fi
+          fi
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/pto_deploy" "$HOME/.ssh/known_hosts"
-          ssh-keygen -y -f "$HOME/.ssh/pto_deploy" > /dev/null
+          chmod 600 "$key_file" "$HOME/.ssh/known_hosts"
+          if ! ssh-keygen -y -P '' -f "$key_file" >/dev/null 2>&1; then
+            echo "::error::Chave SSH invalida. Regrave MCP_DEPLOY_SSH_KEY com a saida base64 -w 0 do arquivo privado da EC2."
+            exit 1
+          fi
           lookup="$DEPLOY_HOST"
           if [[ "$DEPLOY_PORT" != 22 ]]; then lookup="[$DEPLOY_HOST]:$DEPLOY_PORT"; fi
           ssh-keygen -F "$lookup" -f "$HOME/.ssh/known_hosts" >/dev/null || {
