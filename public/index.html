@@ -1,19 +1,127 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Por Trás da Oferta — Jogo</title><style>
-*{box-sizing:border-box}body{margin:0;background:#101427;color:#f7f8ff;font:16px system-ui,sans-serif}header,main,footer{max-width:890px;margin:auto;padding:24px}header{padding-top:40px}h1{font-size:clamp(32px,6vw,56px);margin:8px 0}h2{margin-top:0}.tag{color:#a6c5fa;letter-spacing:.1em;font-size:12px;font-weight:700}.lead{color:#d5deef;line-height:1.6}.panel{background:#202d4d;border:1px solid #445677;border-radius:16px;padding:23px;margin:16px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}input,select,textarea{border:1px solid #7481a6;border-radius:9px;background:#111c35;color:white;font:inherit;padding:12px;width:100%;margin:5px 0 12px}textarea{min-height:92px}label{display:block;font-weight:600}button{background:#a2e5ce;color:#0e3431;border:0;border-radius:10px;padding:12px 20px;font:inherit;font-weight:bold;cursor:pointer;margin:5px 4px 5px 0}button.secondary{background:#354a70;color:#fff}button:disabled{opacity:.5;cursor:not-allowed}.muted,small{color:#bdc8e1}.notice{border-left:3px solid #a2e5ce;padding:10px 15px;background:#243958;margin:12px 0}.danger{color:#ffb4b4}.hide{display:none!important}.card{border:1px solid #536889;border-radius:12px;padding:16px;margin:10px 0;background:#15213b}progress{width:100%;height:16px}footer{font-size:13px;line-height:1.5}@media(max-width:580px){.grid{grid-template-columns:1fr}}
-</style></head><body><header><div class="tag">COLÉGIO RIO BRANCO · CICLO 4</div><h1>Por Trás da Oferta</h1><div class="lead">O desafio não é comprar. É entender por quê. Descubra estratégias de marketing, use um orçamento fictício e receba orientações personalizadas.</div></header><main>
-<section id="auth" class="panel"><h2>Entrar no jogo</h2><div class="grid"><div><form id="login"><label>Apelido<input name="username" autocomplete="username" required></label><label>Senha<input name="password" type="password" autocomplete="current-password" required></label><button>Entrar</button></form></div><div><form id="register"><label>Novo apelido<input name="username" required minlength="3" maxlength="24"></label><label>Senha para demonstração<input type="password" name="password" minlength="10" required></label><label>Código de inscrição da bancada<input name="invite" type="password" required></label><button class="secondary">Criar conta</button></form></div></div><p class="muted">Use apenas apelidos, não nomes completos ou informações pessoais. As senhas ficam protegidas por hash no servidor.</p><div id="auth-message" role="status"></div></section>
-<section id="game" class="hide"><div class="panel"><div class="grid"><div><h2 id="hello"></h2><p id="budget"></p></div><div><p id="progress"></p><button id="logout" class="secondary">Sair</button> <button id="reset" class="secondary">Reiniciar jogo</button> <button id="copy" class="secondary">Copiar resumo para ChatGPT</button></div></div></div>
-<section id="importar" class="panel"><h2>Importar o percurso da Semana até a viagem</h2>
-<p>Jogue em <a href="https://jogo.portrasdaoferta.workers.dev/" target="_blank" rel="noopener noreferrer" style="color:#a2e5ce">Por Trás da Oferta (jogo atual)</a>, abra seu perfil ou o raio-x final e escolha <strong>Exportar JSON da semana</strong>. Aqui, após entrar na sua conta, escolha o arquivo baixado para que o MCP possa consultar essa partida.</p>
-<p class="muted">Importação voluntária: nenhuma informação sai do jogo automaticamente. O arquivo contém apenas interações e compras fictícias; não envie dados pessoais. Uma nova importação substitui a anterior desta conta.</p>
-<form id="c4-import"><label>Arquivo JSON da semana<input id="c4-file" name="arquivo" type="file" accept=".json,application/json" required></label><button type="submit">Importar percurso para o MCP</button></form>
-<div id="c4-message" role="status"></div><div id="c4-summary" class="notice"></div>
-<button id="c4-delete" class="secondary hide">Excluir meu percurso importado</button>
-</section>
-<section id="legacy" class="panel"><h2>Protótipo anterior — quatro desafios de compra</h2><p class="muted">Em cada fase, escolha se compraria e qual estratégia acha que aparece. Não há decisão obrigatória ou resposta certa sobre comprar.</p><div id="scenarios"></div><div id="game-message" role="status"></div></section>
-<section class="panel"><h2>Analisador de anúncios</h2><p>Copie uma oferta que você recebeu. A análise detecta possíveis indícios no texto — não comprova fraude ou desconto real.</p><form id="analyze"><label>Texto do anúncio<textarea name="texto" maxlength="2500" required>Só hoje! Últimas 2 unidades. 50% de desconto. Todo mundo usa!</textarea></label><button>Analisar anúncio</button></form><div id="analysis" role="status"></div></section>
-<section class="panel"><h2>Conectar ao assistente</h2><p>Se o ChatGPT da sua conta permitir plugins MCP personalizados, conecte ao endereço HTTPS deste servidor terminado em <code>/mcp</code>. Quando o ChatGPT pedir autorização, entre com o mesmo apelido e senha do jogo e autorize a leitura.</p><p class="muted">A conexão é individual: cada conta ChatGPT acessa apenas o jogador que autorizou. A disponibilidade do recurso depende do plano.</p></section></section></main><footer><p>Projeto educativo: marketing digital, psicologia do consumo e ODS 12. Os dados registrados referem-se a escolhas fictícias, não a compras reais. Consulte o grupo para solicitar exclusão dos registros após o evento.</p></footer>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light">
+<title>Entrar no MCP · Por Trás da Oferta</title>
+<link rel="stylesheet" href="/mcp-theme.css">
+</head>
+<body class="mcp-page">
+<header class="site-header">
+ <a class="brandline" href="https://jogo.portrasdaoferta.workers.dev/" aria-label="Por Trás da Oferta — jogo"><span class="brand-symbol">↗</span> POR TRÁS DA OFERTA</a>
+ <nav class="header-links" aria-label="Navegação principal"><a class="header-text" href="#auth">Entrar no MCP</a><a class="play-link" href="https://jogo.portrasdaoferta.workers.dev/">Abrir o jogo ↗</a></nav>
+</header>
+<main>
+ <section id="auth" class="entry-layout" aria-labelledby="auth-title">
+  <div class="entry-copy">
+   <p class="tag">✦ COLÉGIO RIO BRANCO · CICLO 4</p>
+   <h1 id="auth-title">Seu feed.<br><em>Suas escolhas.</em></h1>
+   <p class="lede">Uma semana de decisões, anúncios que parecem irresistíveis e um algoritmo que aprende. Entre com sua conta e descubra o que ficou por trás de cada oferta.</p>
+   <div class="feature-line"><span><span class="sparkle">✦</span> Experiência educativa</span><span>♡ Feed e stories</span><span>🔒 Conta individual</span></div>
+   <div class="account-card">
+    <div class="brandline"><span class="brand-symbol">↗</span> POR TRÁS DA OFERTA · MCP</div>
+    <h2>Bem-vindo de volta.</h2>
+    <p class="account-intro">Entre com o <strong>mesmo apelido e senha do jogo</strong> para consultar seu percurso e conectar sua conta ao ChatGPT.</p>
+    <div class="auth-tabs" role="tablist" aria-label="Acesso ao MCP">
+     <button class="auth-tab" type="button" role="tab" id="tab-login" data-auth-tab="login" aria-selected="true" aria-controls="login">Já tenho conta</button>
+     <button class="auth-tab" type="button" role="tab" id="tab-register" data-auth-tab="register" aria-selected="false" aria-controls="register">Cadastro com código</button>
+    </div>
+    <form id="login" class="auth-form" role="tabpanel" aria-labelledby="tab-login">
+     <label for="login-username">Nome de usuário</label>
+     <input id="login-username" name="username" autocomplete="username" placeholder="Ex.: jogador42" minlength="3" maxlength="24" pattern="[A-Za-z0-9_.-]+" required>
+     <label for="login-password">Senha</label>
+     <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Sua senha do jogo" minlength="10" maxlength="128" required>
+     <div class="actions"><button class="primary" type="submit">Entrar no MCP →</button></div>
+    </form>
+    <form id="register" class="auth-form" role="tabpanel" aria-labelledby="tab-register" hidden>
+     <p class="account-intro">Este cadastro é do protótipo anterior e requer o código de inscrição da bancada. Para criar uma conta no jogo atual, use o link abaixo.</p>
+     <label for="register-username">Novo apelido</label>
+     <input id="register-username" name="username" autocomplete="username" placeholder="Apelido fictício" minlength="3" maxlength="24" pattern="[A-Za-z0-9_.-]+" required>
+     <label for="register-password">Senha da demonstração</label>
+     <input id="register-password" name="password" type="password" autocomplete="new-password" placeholder="Pelo menos 10 caracteres" minlength="10" maxlength="128" required>
+     <label for="register-invite">Código de inscrição da bancada</label>
+     <input id="register-invite" name="invite" type="password" autocomplete="off" placeholder="Código fornecido pelo projeto" required>
+     <div class="actions"><button class="primary" type="submit">Criar conta com código →</button></div>
+    </form>
+    <p id="auth-message" class="account-status" role="status" aria-live="polite"></p>
+    <div class="account-privacy">
+     <strong>Como funciona?</strong>
+     <p>Seus dados são fictícios. O jogo atual envia seu percurso automaticamente ao MCP depois do quiz, e você pode autorizá-lo a ser consultado no ChatGPT. Use apenas apelidos, nunca nomes reais ou senhas no chat.</p>
+    </div>
+    <p class="small-link">Ainda não tem uma conta? <a href="https://jogo.portrasdaoferta.workers.dev/">Criar conta no jogo ↗</a></p>
+   </div>
+  </div>
+  
+<aside class="feed-showcase" aria-label="Prévia ilustrativa do feed fictício da campanha">
+ <div class="feed-blob one"></div><div class="feed-blob two"></div>
+ <div class="preview-phone">
+  <div class="phone-top"></div>
+  <div class="phone-bar"><span>pulso<strong>.</strong></span><span class="phone-icons" aria-hidden="true">♡ ⊕</span></div>
+  <div class="story-list">
+   <div class="story-item"><div class="story-ring"><img src="https://jogo.portrasdaoferta.workers.dev/assets/social/unique/avatar-mia.jpg" alt="" referrerpolicy="no-referrer" loading="lazy"></div>mia.s</div>
+   <div class="story-item"><div class="story-ring"><img src="https://jogo.portrasdaoferta.workers.dev/assets/social/unique/avatar-livia.jpg" alt="" referrerpolicy="no-referrer" loading="lazy"></div>livia.looks</div>
+   <div class="story-item"><div class="story-ring"><img src="https://jogo.portrasdaoferta.workers.dev/assets/social/unique/avatar-bia.jpg" alt="" referrerpolicy="no-referrer" loading="lazy"></div>bia.m</div>
+   <div class="story-item"><div class="story-ring"><img src="https://jogo.portrasdaoferta.workers.dev/assets/social/unique/avatar-gabi.jpg" alt="" referrerpolicy="no-referrer" loading="lazy"></div>gabi.n</div>
+  </div>
+  <div class="post-head"><img src="https://jogo.portrasdaoferta.workers.dev/assets/social/unique/avatar-livia.jpg" alt="" referrerpolicy="no-referrer" loading="lazy"><div class="post-author">livia.looks <small>Patrocinado · para você</small></div><span class="post-menu" aria-hidden="true">···</span></div>
+  <div class="post-photo"><img src="https://jogo.portrasdaoferta.workers.dev/assets/social/unique/post-p2.jpg" alt="" referrerpolicy="no-referrer" loading="lazy"><span class="post-label">PUBLICIDADE</span></div>
+  <div class="post-tools" aria-hidden="true"><span>♡ ◯ ↗</span><span>♧</span></div>
+  <div class="post-caption"><strong>livia.looks</strong> Uma escolha parece pequena. E o algoritmo lembra de todas. <span aria-hidden="true">✨</span><small>Prévia fictícia da rede social do jogo</small></div>
+  <div class="bottom-phone" aria-hidden="true"><span>⌂</span><span>⌕</span><span>＋</span><span>♡</span><span>◉</span></div>
+ </div>
+ <div class="floating-note top" aria-hidden="true"><b>♥</b><span>Seu feed aprende<br>com cada escolha</span></div>
+ <div class="floating-note bottom" aria-hidden="true"><b>✦</b><span>Por trás da oferta<br>há uma estratégia</span></div>
+ <p class="preview-hint">Ilustração da experiência · pessoas e marcas fictícias</p>
+</aside>
+ </section>
+ <section id="game" class="dashboard hide" aria-label="Área autenticada">
+  <div class="panel">
+   <div class="dashboard-hero">
+    <div><p class="tag">✦ SEU PERFIL · MCP</p><h2 id="hello"></h2><p id="budget"></p></div>
+    <div><p id="progress"></p><button id="logout" class="secondary">Sair</button><button id="reset" class="secondary">Reiniciar jogo</button><button id="copy" class="secondary">Copiar resumo para ChatGPT</button></div>
+   </div>
+  </div>
+  <section id="importar" class="panel">
+   <h2>Seu percurso da semana</h2>
+   <p>O <a href="https://jogo.portrasdaoferta.workers.dev/" target="_blank" rel="noopener noreferrer">jogo atual</a> envia o percurso automaticamente depois do quiz. A importação manual abaixo é uma alternativa caso o envio falhe: baixe o JSON no perfil ou no Raio-X da partida.</p>
+   <p class="muted">O arquivo registra apenas escolhas e compras fictícias. Uma nova importação substitui o percurso anterior desta conta.</p>
+   <form id="c4-import"><label for="c4-file">Arquivo JSON da semana</label><input id="c4-file" name="arquivo" type="file" accept=".json,application/json" required><button type="submit" class="primary">Importar percurso para o MCP</button></form>
+   <div id="c4-message" role="status"></div><div id="c4-summary" class="notice" aria-live="polite"></div>
+   <button id="c4-delete" class="secondary hide">Excluir meu percurso importado</button>
+  </section>
+  <section id="legacy" class="panel">
+   <h2>Protótipo anterior — quatro desafios de compra</h2>
+   <p class="muted">Em cada fase, decida se compraria e qual estratégia aparece. Não há obrigação de comprar nem respostas certas sobre a compra.</p>
+   <div id="scenarios"></div><div id="game-message" role="status"></div>
+  </section>
+  <section class="panel">
+   <p class="tag">✦ EXPLORE AS ESTRATÉGIAS</p>
+   <h2>Analisador de anúncios</h2>
+   <p>Cole uma oferta. A análise procura sinais de urgência, escassez e persuasão; não comprova fraude ou descontos reais.</p>
+   <form id="analyze"><label for="analyze-text">Texto do anúncio</label><textarea id="analyze-text" name="texto" maxlength="2500" required>Só hoje! Últimas 2 unidades. 50% de desconto. Todo mundo usa!</textarea><button type="submit" class="primary">Analisar anúncio</button></form>
+   <div id="analysis" role="status"></div>
+  </section>
+  <section class="panel">
+   <h2>Conectar ao ChatGPT</h2>
+   <p>Você pode vincular a mesma conta no ChatGPT para consultar seu progresso fictício. Quando o vínculo pedir autenticação, insira sua senha somente nesta página segura.</p>
+   <p class="muted">Endereço do servidor MCP: <code>https://mcp.portrasdaoferta.workers.dev/mcp</code>. O acesso é individual e exige autorização.</p>
+  </section>
+ </section>
+</main>
+<footer class="page-footer">Projeto educativo do Colégio Rio Branco · Ciclo 4 · Marketing digital, psicologia do consumo e ODS 12. Compras e contas fictícias. <a href="https://jogo.portrasdaoferta.workers.dev/">Voltar ao jogo</a></footer>
 <script>
+document.querySelectorAll("[data-auth-tab]").forEach(tab=>{
+ tab.addEventListener("click",()=>{
+  const selected=tab.dataset.authTab;
+  document.querySelectorAll("[data-auth-tab]").forEach(other=>other.setAttribute("aria-selected",String(other===tab)));
+  document.getElementById("login").hidden=selected!=="login";
+  document.getElementById("register").hidden=selected!=="register";
+  document.getElementById("auth-message").textContent="";
+ });
+});
+
 const $=id=>document.getElementById(id);const show=(id,on)=>$(id).classList.toggle('hide',!on);let hasC4=false;
 const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 async function api(path,data){const r=await fetch(path,{method:data===undefined?'GET':'POST',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});let v;try{v=await r.json()}catch{throw Error('Servidor indisponível.');}if(!r.ok)throw Error(v.erro||'Erro de conexão.');return v;}
