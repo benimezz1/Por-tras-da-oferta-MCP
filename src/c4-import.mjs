@@ -50,7 +50,9 @@ function validate(payload) {
   if (!Number.isFinite(s.wallet) || s.wallet < 0 || s.wallet > 5000 || s.goal !== 400 ||
     !Number.isFinite(s.coins) || s.coins < 0 || s.coins > 10000)
     problem('Valores fictícios fora do formato esperado.');
-  for (const [field,max] of [['feedItems',58],['purchases',100],['viewed',100],['liked',300],
+  // A semana completa tem 5 x 7 posts/anuncios, 25 eventos e 5 viradas de dia.
+// O limite 58 pertence apenas ao stream comercial, nao ao historico integral.
+for (const [field,max] of [['feedItems',65],['purchases',100],['viewed',100],['liked',300],
     ['likedAds',300],['bookmarks',300],['cart',20],['events',1200],['notifs',40],
     ['fixes',100],['invoice',100],['subscriptions',30]]) {
     if (!Array.isArray(s[field]) || s[field].length > max)
