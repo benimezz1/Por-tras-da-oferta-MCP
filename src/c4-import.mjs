@@ -115,7 +115,7 @@ for (const [field,max] of [['feedItems',2500],['purchases',100],['viewed',100],[
   }
   if (s.socialActivity !== undefined) {
     if (!obj(s.socialActivity) || ['postsCriados','storiesCriados','comentariosCriados'].some(k=>
-      !Number.isInteger(s.socialActivity[k]) || s.socialActivity[k] < 0 || s.socialActivity[k] > 200))
+      !Number.isInteger(s.socialActivity[k]) || s.socialActivity[k] < 0 || s.socialActivity[k] > (k==='comentariosCriados'?1000:200)))
       problem('Resumo de atividade social invalido.');
   }
   if (typeof payload.exportadoEm !== 'string' || !Number.isFinite(Date.parse(payload.exportadoEm)))
