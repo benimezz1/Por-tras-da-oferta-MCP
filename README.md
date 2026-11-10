@@ -14,6 +14,15 @@ Jogo educativo e servidor **Model Context Protocol (MCP)** para o Ciclo 4 de Ló
 - OAuth 2.1 experimental para ChatGPT: fluxo de autorização com **PKCE S256**, DCR com callbacks permitidos e token Bearer associado a um participante. Sem API key da OpenAI.
 - Ferramentas MCP: `get_profile`, `consultar_progresso` (prioriza C4), `consultar_percurso_c4`, `analisar_anuncio`, `avaliar_compra`, `explicar_estrategia`.
 
+
+## Compartilhamento social depois das compras (C4)
+
+O jogo pode oferecer quatro escolhas apos a compra simulada: `feed`, `story`, `ambos` e `nenhum`. O contrato C4 permanece na **versao 1**; os campos opcionais `estado.purchaseShares` e `estado.socialActivity` preservam compatibilidade com registros anteriores. O servidor valida as escolhas e recebe somente produtos, dias, canais e contagens, sem legendas ou comentarios digitados.
+
+A ferramenta autenticada `consultar_progresso` resume os compartilhamentos. Para analise detalhada, chame `consultar_percurso_c4` com `secao: "compartilhamentos"`. Exemplo de pergunta ao assistente: *"Eu compartilhei alguma compra? Explique como isso pode influenciar meus amigos por prova social ou FOMO, sem concluir que alguem necessariamente sentiu essa pressao."*
+
+O novo percurso extenso exige aceitar ate 2.500 itens no feed. O servidor continua limitando o JSON a 1 MB e validando estruturalmente o conteudo. **A publicacao, os likes e os comentarios sao simulados; nao representam influencia comprovada nem um diagnostico.**
+
 ## Execução local sem Docker
 
 Requer Node.js 22+; o protótipo não precisa instalar pacotes npm.

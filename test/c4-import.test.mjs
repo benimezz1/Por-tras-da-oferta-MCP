@@ -80,8 +80,13 @@ test('aceita feed integral de cinco dias e rejeita excesso sem perder dados', ()
   assert.equal(imported.resumo.experiencia.eventosDeRoteiro, 30);
   assert.equal(getC4(db, user).document.estado.feedItems.length, 65);
 
+  const longFeed=structuredClone(doc);
+  longFeed.estado.feedItems.push(...Array.from({length:480},(_,i)=>({kind:'post',id:'novo-'+i,day:i%5+1})));
+  const importedLong=importC4({}, user, longFeed);
+  assert.equal(importedLong.resumo.experiencia.conteudosExibidos,545);
+
   const extra = structuredClone(doc);
-  extra.estado.feedItems.push({kind: 'event', id: 'ev-extra', day: 5});
+  extra.estado.feedItems.push(...Array.from({length:2501-65}, (_,i)=>({kind:'post',id:'extra-'+i,day:5})));
   assert.throws(() => importC4({}, user, extra), /feedItems/);
 
   const absent = structuredClone(doc);
@@ -128,4 +133,35 @@ test('API: importação exige login, rejeita origem externa e separa contas', {t
   const wrongDelete=await json('/api/c4/delete',{confirmar:false},a);assert.equal(wrongDelete.status,422);
   const clear=await json('/api/c4/delete',{confirmar:true},a);assert.equal(clear.status,200);
   assert.equal((await (await fetch(base+'/api/c4/progress',{headers:{cookie:a}})).json()).importado,false);
+});
+
+test('registra publicacao de compra no feed, story, ambos ou nenhum sem presumir FOMO', () => {
+  const doc=payload('c4-social-sharing-123456');
+  doc.estado.purchaseShares=[
+    {orderId:'pedido-teste-1',day:1,products:['fone'],channel:'ambos',
+      postId:'me-compra-1',storyId:'story-compra-1'}
+  ];
+  doc.estado.socialActivity={postsCriados:1,storiesCriados:1,comentariosCriados:3};
+  const user={id:'social-A',username:'participante_social'},db={};
+  const saved=importC4(db,user,doc);
+  assert.equal(saved.importado,true);
+  assert.equal(saved.resumo.compartilhamentos.publicouNoFeed,1);
+  assert.equal(saved.resumo.compartilhamentos.publicouNosStories,1);
+  assert.equal(saved.resumo.compartilhamentos.publicouEmAmbos,1);
+  assert.equal(saved.resumo.compartilhamentos.atividadePropria.comentariosCriados,3);
+  const section=detailC4(user,getC4(db,user),'compartilhamentos');
+  assert.match(section.relacaoComPesquisa.fomo,/nao demonstra/);
+  const noShare=payload('c4-social-nenhum-123456');
+  noShare.estado.purchaseShares=[{orderId:'pedido-teste-2',day:1,products:['fone'],channel:'nenhum',postId:null,storyId:null}];
+  const result=importC4({},user,noShare);
+  assert.equal(result.resumo.compartilhamentos.optouPorNaoPublicar,1);
+  const invalid=payload('c4-social-bad-123456');
+  invalid.estado.purchaseShares=[{orderId:'pedido-teste-3',day:1,products:['fone'],channel:'story',postId:null,storyId:null}];
+  assert.throws(()=>importC4({},user,invalid),/inconsistente/);
+  const duplicate=payload('c4-social-duplicate-123456');
+  duplicate.estado.purchaseShares=[doc.estado.purchaseShares[0],doc.estado.purchaseShares[0]];
+  assert.throws(()=>importC4({},user,duplicate),/Compartilhamento/);
+  const old=payload('c4-social-legado-123456');
+  const historic=importC4({},user,old);
+  assert.equal(historic.resumo.compartilhamentos.totalDecisoes,0);
 });

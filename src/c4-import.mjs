@@ -18,7 +18,7 @@ function walk(value) {
   const stack = [[value,0]]; let nodes = 0;
   while(stack.length) {
     const [v, depth] = stack.pop();
-    if (++nodes > 20000 || depth > 16) problem('O arquivo possui estrutura excessiva.');
+    if (++nodes > 65000 || depth > 16) problem('O arquivo possui estrutura excessiva.');
     if (typeof v === 'string' && v.length > 6000) problem('Texto excessivamente longo no arquivo.');
     if (typeof v === 'number' && !Number.isFinite(v)) problem('Número inválido.');
     if (Array.isArray(v)) {
@@ -52,15 +52,15 @@ function validate(payload) {
     problem('Valores fictícios fora do formato esperado.');
   // A semana completa tem 5 x 7 posts/anuncios, 25 eventos e 5 viradas de dia.
 // O limite 58 pertence apenas ao stream comercial, nao ao historico integral.
-for (const [field,max] of [['feedItems',65],['purchases',100],['viewed',100],['liked',300],
-    ['likedAds',300],['bookmarks',300],['cart',20],['events',1200],['notifs',40],
+for (const [field,max] of [['feedItems',2500],['purchases',100],['viewed',100],['liked',1500],
+    ['likedAds',1500],['bookmarks',1500],['cart',20],['events',4000],['notifs',40],
     ['fixes',100],['invoice',100],['subscriptions',30]]) {
     if (!Array.isArray(s[field]) || s[field].length > max)
       problem('Dados de '+field+' ausentes ou fora do limite.');
   }
   if (!obj(s.pressure) || !obj(s.pressure.exposed) || !obj(s.pressure.influenced) ||
     !obj(s.pressure.moments) || !obj(s.algorithm) || !Array.isArray(s.algorithm.events) ||
-    s.algorithm.events.length > 450 || !obj(s.vibe) || !Array.isArray(s.vibe.log) ||
+    s.algorithm.events.length > 2500 || !obj(s.vibe) || !Array.isArray(s.vibe.log) ||
     s.vibe.log.length > 160 || !obj(s.quiz)) problem('Dados de estratégias, algoritmo ou quiz inválidos.');
   if (typeof s.personalized !== 'boolean') problem('Configuração de personalização inválida.');
   if (Object.keys(s.quiz).some(k => !/^q[0-4]$/.test(k) || !KEYS.includes(s.quiz[k])))
@@ -87,6 +87,36 @@ for (const [field,max] of [['feedItems',65],['purchases',100],['viewed',100],['l
   for(const c of s.subscriptions) {
     if(!obj(c) || typeof c.active !== 'boolean' || !Number.isFinite(c.monthly) ||
       c.monthly < 0 || c.monthly > 1000) problem('Assinatura fictícia inválida.');
+  }
+  // Campos sociais opcionais; sem enviar legendas ou comentarios privados.
+  if (s.purchaseShares !== undefined) {
+    if (!Array.isArray(s.purchaseShares) || s.purchaseShares.length > 100)
+      problem('Historico de compartilhamentos fora do limite.');
+    const orders=new Set();
+    for (const share of s.purchaseShares) {
+      if (!obj(share) || typeof share.orderId !== 'string' || share.orderId.length > 110 ||
+        !/^[a-zA-Z0-9_-]+$/.test(share.orderId) || orders.has(share.orderId) ||
+        !Number.isInteger(share.day) || share.day < 1 || share.day > 5 ||
+        !['feed','story','ambos','nenhum'].includes(share.channel) ||
+        !Array.isArray(share.products) || share.products.length < 1 || share.products.length > 8 ||
+        share.products.some(id=>!PRODUCTS.includes(id)) ||
+        !share.products.every(id=>s.purchases.some(p=>p.id===id)))
+        problem('Compartilhamento de compra invalido.');
+      for (const key of ['postId','storyId']) {
+        if (share[key] !== null && share[key] !== undefined &&
+          (typeof share[key] !== 'string' || share[key].length > 110 || !/^[a-zA-Z0-9_-]+$/.test(share[key])))
+          problem('Identificador social invalido.');
+      }
+      const feed=['feed','ambos'].includes(share.channel),story=['story','ambos'].includes(share.channel);
+      if (feed!==!!share.postId || story!==!!share.storyId)
+        problem('Canal de compartilhamento inconsistente.');
+      orders.add(share.orderId);
+    }
+  }
+  if (s.socialActivity !== undefined) {
+    if (!obj(s.socialActivity) || ['postsCriados','storiesCriados','comentariosCriados'].some(k=>
+      !Number.isInteger(s.socialActivity[k]) || s.socialActivity[k] < 0 || s.socialActivity[k] > (k==='comentariosCriados'?1000:200)))
+      problem('Resumo de atividade social invalido.');
   }
   if (typeof payload.exportadoEm !== 'string' || !Number.isFinite(Date.parse(payload.exportadoEm)))
     problem('Data de exportação inválida.');
@@ -133,6 +163,7 @@ export function summarizeC4(user, doc) {
   const travelled=available>=s.goal;
   const purchases=arr(s.purchases);
   const strategies=strategyRows(s), quiz=quizRows(s);
+   const sharing=arr(s.purchaseShares);
   const feed=arr(s.feedItems);
   const events=arr(s.algorithm.events);
   const counts=Object.create(null), topics=Object.create(null);
@@ -148,6 +179,18 @@ export function summarizeC4(user, doc) {
       disponivelParaViagem:available,viagemFoiPossivel:travelled,
       faltaParaViagem:travelled?0:round(s.goal-available),
       gastoTotalSimulado:round(620-s.wallet+dueNow+future+monthly),moedas:s.coins},
+    compartilhamentos:{
+      totalDecisoes:sharing.length,
+      publicouNoFeed:sharing.filter(x=>x.channel==='feed'||x.channel==='ambos').length,
+      publicouNosStories:sharing.filter(x=>x.channel==='story'||x.channel==='ambos').length,
+      publicouEmAmbos:sharing.filter(x=>x.channel==='ambos').length,
+      optouPorNaoPublicar:sharing.filter(x=>x.channel==='nenhum').length,
+      escolhas:sharing.map(x=>({dia:x.day,produtos:x.products,canal:x.channel})),
+      atividadePropria:{postsCriados:n(s.socialActivity?.postsCriados),
+        storiesCriados:n(s.socialActivity?.storiesCriados),
+        comentariosCriados:n(s.socialActivity?.comentariosCriados)},
+      leituraEducativa:'Compartilhar compras pode gerar prova social para quem ve e incentivar comparacao ou FOMO. Isso nao comprova a motivacao de quem publicou.'
+    },
     consumo:{compras:purchases.length,produtosVistos:s.viewed.length,curtidas:s.liked.length,
       curtidasEmAnuncios:s.likedAds.length,carrinhoAtual:s.cart,comprasPorProduto:purchases.map(p=>({
         id:p.id,produto:String(p.name||p.id).slice(0,120),dia:p.day||null,
@@ -189,6 +232,11 @@ export function detailC4(user,record,section='resumo') {
     faturas:state.invoice,assinaturas:state.subscriptions,cupons:state.coupons,
     correcoesEAlternativas:state.fixes};
   if(section==='estrategias')return {estrategias:summary.estrategias};
+   if(section==='compartilhamentos')return {resumo:summary.compartilhamentos,
+     evidencia:'Escolhas simuladas de divulgar ou nao divulgar compras ficticias.',
+     relacaoComPesquisa:{provaSocial:'Publicar uma compra torna o produto visivel a amigos; curtidas e comentarios simulados podem ser pistas de popularidade.',
+       fomo:'Ver compras de amigos pode despertar receio de ficar de fora, mas nao demonstra que isso ocorreu.',
+       limite:'Nao e diagnostico nem prova de que o compartilhamento causou outras compras.'}};
   if(section==='quiz')return summary.quiz;
   if(section==='vibe')return {resumo:summary.vibe,linhaDoTempo:state.vibe.log};
   if(section==='algoritmo')return {resumo:summary.algoritmo,
