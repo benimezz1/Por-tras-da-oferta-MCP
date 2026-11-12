@@ -184,9 +184,16 @@ const server = createServer(async (req, res) => {
       if (req.method === 'POST' && path.pathname === '/api/c4/client/complete') {
         throttle(req,'c4-auto-submit',15);
         const payload=await jsonBody(req,C4_MAX_BYTES);
-        if (payload?.estado?.finished!==true || payload?.estado?.endStep!==3 ||
-          !payload?.estado?.quiz || Object.keys(payload.estado.quiz).length!==5)
-          return send(res,422,{erro:'Conclua os cinco dias e responda as cinco questões antes do envio.'});
+        const estado=payload?.estado,quiz=estado?.quiz;
+        const completed=estado?.finished===true&&estado.endStep===3&&
+          quiz&&Object.keys(quiz).length===5;
+        // O jogador pode escolher enviar o resultado da viagem sem entrar no quiz.
+        // Essa via exige a intencao explicita e preserva quiz respondido como 0/5.
+        const tripOnly=payload?.modoEnvio==='viagem-sem-quiz'&&
+          estado?.finished===true&&estado.day===5&&estado.endStep===0&&
+          quiz&&Object.keys(quiz).length===0;
+        if(!completed&&!tripOnly)
+          return send(res,422,{erro:'Conclua os cinco dias e responda o quiz, ou escolha explicitamente enviar a viagem sem quiz.'});
         const result=await update(db=>importC4(db,identity.user,payload));
         return send(res,result.repetido?200:201,{sucesso:true,importado:result.importado,
           repetido:result.repetido,partida:result.resumo.partida.id,
