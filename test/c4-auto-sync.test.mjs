@@ -113,6 +113,28 @@ test("login simples, envio automatico, identidade e CORS da Semana C4", {timeout
  const otherCookie=otherLogin.headers.get("set-cookie")?.split(";")[0];
  const otherProgress=await fetch(base+"/api/c4/progress",{headers:{Cookie:otherCookie}});
  assert.equal((await otherProgress.json()).importado,false,"contas separadas");
+ // Envio antecipado voluntario preserva quiz nao respondido.
+ const traveler=await json("/api/c4/client/signup",{username:"estudante_c",password:"senha-bem-longa-c456"});
+ assert.equal(traveler.response.status,201);
+ const tripToken=traveler.body.token;
+ const early=completeDoc();early.estado.endStep=0;early.estado.quiz={};
+ const noOptIn=await json("/api/c4/client/complete",early,tripToken);
+ assert.equal(noOptIn.response.status,422,"envio sem quiz precisa ser explicito");
+ early.modoEnvio="viagem-sem-quiz";
+ const earlySent=await json("/api/c4/client/complete",early,tripToken);
+ assert.equal(earlySent.response.status,201,JSON.stringify(earlySent.body));
+ assert.equal(earlySent.body.quiz.respondidas,0);
+ const again=await json("/api/c4/client/complete",early,tripToken);
+ assert.equal(again.response.status,200);
+ assert.equal(again.body.repetido,true);
+ const accountLogin=await fetch(base+"/api/login",{method:"POST",headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({username:"estudante_c",password:"senha-bem-longa-c456"})});
+ assert.equal(accountLogin.status,200);
+ const cookieTrip=accountLogin.headers.get("set-cookie")?.split(";")[0];
+ const tripSummary=await fetch(base+"/api/c4/progress",{headers:{Cookie:cookieTrip}});
+ const tripInfo=(await tripSummary.json()).resumo;
+ assert.equal(tripInfo.quiz.respondidas,0);
+ assert.equal(tripInfo.partida.modoEnvio,"viagem-sem-quiz");
  const logout=await json("/api/c4/client/logout",{},liveToken);
  assert.equal(logout.response.status,200);
  const after=await fetch(base+"/api/c4/client/me",{headers:{Authorization:"Bearer "+liveToken,Origin:C4_ORIGIN}});

@@ -129,7 +129,7 @@ for (const [field,max] of [['feedItems',2500],['purchases',100],['viewed',100],[
     formato:FORMAT,versao:1,campanha:CAMPAIGN,exportadoEm:payload.exportadoEm,
     sessao:{id:s.runId,iniciadaEm:payload.sessao.iniciadaEm||null,
       concluidaEm:payload.sessao.concluidaEm||null},
-    simulado:true,estado:s
+    simulado:true,modoEnvio:payload.modoEnvio==='viagem-sem-quiz'?'viagem-sem-quiz':'quiz-completo',estado:s
   };
 }
 const valueSum=(rows,key)=>round(arr(rows).reduce((sum,v)=>sum+n(v?.[key]),0));
@@ -173,7 +173,8 @@ export function summarizeC4(user, doc) {
     campanha:CAMPAIGN,formato:FORMAT,versao:1,
     participante:{id:user.id,apelido:user.username},
     partida:{id:doc.sessao.id,iniciadaEm:doc.sessao.iniciadaEm,concluidaEm:doc.sessao.concluidaEm,
-      exportadaEm:doc.exportadoEm,concluida:s.finished,diaAtual:s.day,etapaFinal:s.endStep},
+      exportadaEm:doc.exportadoEm,concluida:s.finished,diaAtual:s.day,etapaFinal:s.endStep,
+      modoEnvio:doc.modoEnvio||'quiz-completo'},
     economia:{saldoInicial:620,metaViagem:s.goal,saldoAtual:round(s.wallet),
       valorFaturaSabado:dueNow,parcelasFuturas:future,assinaturasAtivasMensais:monthly,
       disponivelParaViagem:available,viagemFoiPossivel:travelled,
