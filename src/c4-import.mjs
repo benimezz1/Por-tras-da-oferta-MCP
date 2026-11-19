@@ -160,7 +160,8 @@ export function summarizeC4(user, doc) {
   const dueNow=valueSum(s.invoice,'dueNow'), future=valueSum(s.invoice,'future');
   const monthly=valueSum(s.subscriptions.filter(x=>x.active),'monthly');
   const available=round(s.wallet-dueNow-monthly);
-  const travelled=available>=s.goal;
+  const completedWeek=s.finished&&s.day===5&&!s.flags?.endedEarly;
+  const travelled=completedWeek&&available>=s.goal;
   const purchases=arr(s.purchases);
   const strategies=strategyRows(s), quiz=quizRows(s);
    const sharing=arr(s.purchaseShares);
@@ -173,7 +174,7 @@ export function summarizeC4(user, doc) {
     campanha:CAMPAIGN,formato:FORMAT,versao:1,
     participante:{id:user.id,apelido:user.username},
     partida:{id:doc.sessao.id,iniciadaEm:doc.sessao.iniciadaEm,concluidaEm:doc.sessao.concluidaEm,
-      exportadaEm:doc.exportadoEm,concluida:s.finished,diaAtual:s.day,etapaFinal:s.endStep,
+      exportadaEm:doc.exportadoEm,concluida:s.finished&&s.day===5&&!s.flags?.endedEarly,encerradaAntecipadamente:!!s.flags?.endedEarly,diaAtual:s.day,etapaFinal:s.endStep,
       modoEnvio:doc.modoEnvio||'quiz-completo'},
     economia:{saldoInicial:620,metaViagem:s.goal,saldoAtual:round(s.wallet),
       valorFaturaSabado:dueNow,parcelasFuturas:future,assinaturasAtivasMensais:monthly,
@@ -215,9 +216,13 @@ export function importC4(db,user,input) {
   const doc=validate(input);
   db.c4Imports ||= [];
   const prior=db.c4Imports.find(x=>x.userId===user.id);
-  if(prior?.document.sessao.id===doc.sessao.id && prior.document.exportadoEm===doc.exportadoEm)
+  if(prior?.document.sessao.id===doc.sessao.id && prior.document.exportadoEm===doc.exportadoEm) {
+    if(JSON.stringify(prior.document)!==JSON.stringify(doc)) problem('Esta revisão já foi recebida com dados diferentes.',409);
     return {importado:false,repetido:true,resumo:summarizeC4(user,prior.document)};
-  if(prior?.document.sessao.id===doc.sessao.id && Date.parse(prior.document.exportadoEm)>Date.parse(doc.exportadoEm))
+  }
+  if(prior?.document.sessao.id===doc.sessao.id && prior.document.modoEnvio==='quiz-completo' && doc.modoEnvio==='viagem-sem-quiz')
+    problem('O quiz completo já foi recebido; não é permitido sobrescrever com uma etapa anterior.',409);
+  if(prior?.document.sessao.id===doc.sessao.id && Date.parse(prior.document.exportadoEm)>=Date.parse(doc.exportadoEm))
     problem('Existe uma exportação mais recente desta mesma partida.',409);
   const record={userId:user.id,document:doc,importadoEm:new Date().toISOString()};
   db.c4Imports=db.c4Imports.filter(x=>x.userId!==user.id);

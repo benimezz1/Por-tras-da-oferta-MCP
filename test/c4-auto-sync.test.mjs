@@ -127,6 +127,17 @@ test("login simples, envio automatico, identidade e CORS da Semana C4", {timeout
  const again=await json("/api/c4/client/complete",early,tripToken);
  assert.equal(again.response.status,200);
  assert.equal(again.body.repetido,true);
+ // Nao aceitar encerramento no quarto dia, mesmo que os campos afirmem "finished".
+ const partial=completeDoc();partial.estado.day=4;
+ const rejectedPartial=await json("/api/c4/client/complete",partial,tripToken);
+ assert.equal(rejectedPartial.response.status,422,"quiz completo so vale ao fim do quinto dia");
+ const partialTrip=completeDoc();partialTrip.estado.day=4;partialTrip.estado.endStep=0;partialTrip.estado.quiz={};partialTrip.modoEnvio="viagem-sem-quiz";
+ const rejectedPartialTrip=await json("/api/c4/client/complete",partialTrip,tripToken);
+ assert.equal(rejectedPartialTrip.response.status,422,"viagem nao e concluida antes do quinto dia");
+ // Mesmo timestamp da revisao anterior com outro conteudo deve ser conflito.
+ const conflicted=structuredClone(early);conflicted.estado.wallet=419;
+ const rejectedConflict=await json("/api/c4/client/complete",conflicted,tripToken);
+ assert.equal(rejectedConflict.response.status,409,"revisao igual nao pode mudar de conteudo");
  const accountLogin=await fetch(base+"/api/login",{method:"POST",headers:{"Content-Type":"application/json"},
   body:JSON.stringify({username:"estudante_c",password:"senha-bem-longa-c456"})});
  assert.equal(accountLogin.status,200);
@@ -135,6 +146,14 @@ test("login simples, envio automatico, identidade e CORS da Semana C4", {timeout
  const tripInfo=(await tripSummary.json()).resumo;
  assert.equal(tripInfo.quiz.respondidas,0);
  assert.equal(tripInfo.partida.modoEnvio,"viagem-sem-quiz");
+ // Quiz respondido atualiza a mesma partida, mas nao pode ser revertido.
+ const upgraded=completeDoc();upgraded.exportadoEm="2026-11-04T20:05:00.000Z";
+ const completedAfterTrip=await json("/api/c4/client/complete",upgraded,tripToken);
+ assert.equal(completedAfterTrip.response.status,201);
+ assert.equal(completedAfterTrip.body.quiz.respondidas,5);
+ const staleTrip=structuredClone(early);staleTrip.exportadoEm="2026-11-04T20:10:00.000Z";
+ const rejectedDowngrade=await json("/api/c4/client/complete",staleTrip,tripToken);
+ assert.equal(rejectedDowngrade.response.status,409,"quiz completo nao pode ser sobrescrito por envio parcial");
  const logout=await json("/api/c4/client/logout",{},liveToken);
  assert.equal(logout.response.status,200);
  const after=await fetch(base+"/api/c4/client/me",{headers:{Authorization:"Bearer "+liveToken,Origin:C4_ORIGIN}});

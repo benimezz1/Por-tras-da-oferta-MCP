@@ -7,6 +7,7 @@ if (!['https:', 'http:'].includes(url.protocol) || (url.protocol !== 'https:' &&
   throw Error('PUBLIC_BASE_URL precisa ser HTTPS, exceto localhost.');
 }
 export const PRODUCTION = url.protocol === 'https:';
+const MAX_USERS = Math.max(1, Math.min(10000, Number.parseInt(process.env.C4_MAX_USERS || '50',10) || 50));
 const INVITE = process.env.REGISTRATION_CODE || (PRODUCTION ? '' : 'demo-local');
 if (PRODUCTION && (INVITE.length < 16 || INVITE.startsWith('TROQUE-'))) throw Error('Defina REGISTRATION_CODE aleatório de 16+ caracteres no ambiente público.');
 const SCOPE = ['profile.read', 'game.read', 'offer.analyze'];
@@ -30,7 +31,7 @@ async function createRegisteredUser({ username, password }) {
   const user = { id: 'usr_' + newToken(12), username, salt,
     passwordHash: hashedPassword(password, salt), createdAt: Date.now() };
   await update(db => {
-    if (db.users.length >= 50) throw Error('Limite de inscrições da demonstração atingido.');
+    if (db.users.length >= MAX_USERS) throw Object.assign(Error('Limite de inscrições da demonstração atingido.'), { status: 429 });
     if (db.users.some(x => x.username.toLowerCase() === username.toLowerCase()))
       throw Object.assign(Error('Este apelido já está em uso. Entre com sua senha ou escolha outro.'), { status: 409 });
     db.users.push(user);
