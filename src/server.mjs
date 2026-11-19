@@ -167,7 +167,7 @@ const server = createServer(async (req, res) => {
     }
     if (isC4Client(path)) {
       if (req.method === 'POST' && path.pathname === '/api/c4/client/signup') {
-        throttle(req,'c4-signup',5);
+        throttle(req,'c4-signup',Math.max(1,Math.min(120,Number.parseInt(process.env.C4_SIGNUP_PER_MINUTE||'5',10)||5)));
         return send(res,201,await createPlayer(await jsonBody(req)));
       }
       if (req.method === 'POST' && path.pathname === '/api/c4/client/login') {
@@ -185,7 +185,7 @@ const server = createServer(async (req, res) => {
         throttle(req,'c4-auto-submit',15);
         const payload=await jsonBody(req,C4_MAX_BYTES);
         const estado=payload?.estado,quiz=estado?.quiz;
-        const completed=estado?.finished===true&&estado.endStep===3&&
+        const completed=estado?.finished===true&&estado.day===5&&estado.endStep===3&&
           quiz&&Object.keys(quiz).length===5;
         // O jogador pode escolher enviar o resultado da viagem sem entrar no quiz.
         // Essa via exige a intencao explicita e preserva quiz respondido como 0/5.
